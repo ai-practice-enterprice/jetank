@@ -22,7 +22,7 @@ class Camera_subscriber(Node):
 
         self.subscription = self.create_subscription(
             Image,
-            'rgb_cam/image_raw',
+            'camera/image_raw',
             self.camera_callback,
             10)
         self.subscription 
@@ -36,7 +36,7 @@ class Camera_subscriber(Node):
         results = self.model(img)
 
         self.yolov8_inference.header.frame_id = "inference"
-        self.yolov8_inference.header.stamp = camera_subscriber.get_clock().now().to_msg()
+        self.yolov8_inference.header.stamp = self.get_clock().now().to_msg()
 
         for r in results:
             boxes = r.boxes
@@ -60,8 +60,15 @@ class Camera_subscriber(Node):
         self.yolov8_pub.publish(self.yolov8_inference)
         self.yolov8_inference.yolov8_inference.clear()
 
-if __name__ == '__main__':
+
+def main():
     rclpy.init(args=None)
+    
     camera_subscriber = Camera_subscriber()
     rclpy.spin(camera_subscriber)
+
     rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
