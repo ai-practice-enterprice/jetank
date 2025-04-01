@@ -9,7 +9,12 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name, 
+            ['package.xml']),
+        ('share/' + package_name + '/weights',
+            ['yolo_node/weights/best.pt']),
+        ('share/' + package_name + '/classes',
+            ['yolo_node/classes/classes.txt']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
