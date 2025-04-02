@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # for ultralytics => because we're running on Ubuntu 22.04  
 # we have to carefully select a numpy version that can be used 
-# by ultralytics and other libs => run => sudo pip install -U numpy==1.26.4
+# by ultralytics and other libs that ultralytics depends on. Depending on how you installed ultralytics:
+# => run => sudo pip install -U numpy==1.26.4
+# => or run => python3 -m pip install numpy==1.26.4
 from ultralytics import YOLO
 
 import rclpy

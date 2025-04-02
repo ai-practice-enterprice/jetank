@@ -37,7 +37,7 @@
 					<far>8.0</far>
 				</clip>
 			</camera>
-			<topic>camera/image_raw</topic>
+			<topic>$(arg namespace)/camera/image_raw</topic>
             <gz_frame_id>CAMERA_OPTICAL</gz_frame_id>
 		</sensor>
 	</gazebo>

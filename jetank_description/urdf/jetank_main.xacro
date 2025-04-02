@@ -57,7 +57,7 @@
     <xacro:property name="BEARING_material"                 value="0.67 0.74 0.67 1" /> 
 
     <!-- mass -->
-    <xacro:property name="base_link_mass"               value="0.7639308708503839" /> 
+    <xacro:property name="base_link_mass"               value="2.7639308708503839" /> 
     <xacro:property name="DRIVER_WHEEL_L_mass"          value="0.1049698213829899" /> 
     <xacro:property name="DRIVER_WHEEL_R_mass"          value="0.1049698213829899" /> 
     <xacro:property name="FREE_WHEEL_L_mass"            value="0.1148888948541452" /> 
