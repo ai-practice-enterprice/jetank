@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'midas_node'
+package_name = 'jetank_navigation'
 
 setup(
     name=package_name,
@@ -10,15 +10,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('lib/' + package_name, [package_name+'/MidasDetector.py']),
     ],
-    install_requires=[
-        'setuptools',
-        'torch',
-        'numpy',
-        'opencv',
-        'timm'
-    ],
+    install_requires=['setuptools'],
     zip_safe=True,
     maintainer='ubuntu',
     maintainer_email='ubuntu@todo.todo',
@@ -27,8 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # executable_name = pkg_name.file_name:func_name 
-            "depthV2 = midas_node.detectionV2:main"
+            "navigate = jetank_navigation.jetank_FSMNavigator_node:main",
         ],
     },
 )
