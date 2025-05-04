@@ -2,14 +2,16 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node , ParameterDescriptor
-from sensor_msgs.msg import Image
-from geometry_msgs.msg import Twist
+from std_msgs.msg import Int16 
+from sensor_msgs.msg import Image, CompressedImage
+from geometry_msgs.msg import Twist , Point
 from trajectory_msgs.msg import JointTrajectory
 from cv_bridge import CvBridge, CvBridgeError
 from enum import Enum
 import random
 import heapq
 import time
+import copy
 
 # references from:
 # ----------------
@@ -89,9 +91,9 @@ class FSMNavigator(Node):
         # --------------------------- -------------------- --------------------------- #
         # --------------------------- state send by Server --------------------------- # 
         # --------------------------- -------------------- --------------------------- #
-        self.goal_position = (1, 2)
-        self.start_position = (0,0) 
-        self.current_position = (0, 0)
+        self.goal_position = (0,0)
+        self.start_position = (4,0) 
+        self.current_position = copy.deepcopy(self.start_position)
         self.direction = Directions.SOUTH
         self.map = [
             [9,9,9,9,9,],
@@ -109,24 +111,25 @@ class FSMNavigator(Node):
         self.prev_cy = None
         self.prev_direction = None
 
-        self.jetank_state = JetankState.INITIALIZE
-        self.prev_jetank_state = JetankState.INITIALIZE
-
-        self.dot_color_detected = None
-        self.next_dot_color = None
-        self.dot_disseappered_at_time = 0
-        self.dead_reckoning_active = False
-        self.DEAD_RECKONING_THRESHOLD = 4.0
-
         self.next_position = self.current_position
+        self.dead_reckoning_active = False
+        self.dot_detected = False
+        self.next_dot_color = None
 
+        self.jetank_state = JetankState.IDLE
+        self.prev_jetank_state = JetankState.IDLE
         self.direction_turn = Turning.CLOCK_WISE
+
+        self.line_disseappered_at_time = 0
+        self.dot_disseappered_at_time = 0
 
         self.alpha_smoother = 0.3 
         
         ## user-defined parameters:
+        # Amount of time between a observation (dot or line disappeared) and action (stop , move forwards, realign)
+        self.DEAD_RECKONING_THRESHOLD = 2.4
         # Minimum size for a contour to be considered anything
-        self.MIN_AREA = 150 
+        self.MIN_AREA = 100
         # Proportional constant to be applied on speed when turning 
         # (Multiplied by the error value)
         self.KP = 1.1/100 
@@ -135,23 +138,15 @@ class FSMNavigator(Node):
         # The maximum error value for which the robot is still in a straight line
         self.MAX_ERROR = 30
         # The maximum error value for which the robot is aligned when turning
-        self.MAX_ALIGNMENT_ERROR = 15
+        self.MAX_ALIGNMENT_ERROR = 50
         # Linear velocity (linear.x in Twist) 
-        self.declare_parameter(
-            name="LIN_VEL",
-            value=0.15,
-            ignore_override=False,
-            descriptor=ParameterDescriptor(
-                type="float",
-                description="Sets the std linear velocity of the Jetank",
-                name="LIN_VEL"
-            )
-        )
-        self.LIN_VEL = self.get_parameter("LIN_VEL").value
+        self.LIN_VEL = 0.15
         self.current_lin_vel = 0
+        self.prev_lin_vel = 0
         # Angular velocity (angular.z in Twist)
-        self.ANG_VEL = 0.9
+        self.ANG_VEL = 0.75
         self.current_ang_vel = 0 
+        self.prev_ang_vel = 0
 
         self.COUNTER_THRESHOLD = self.TIMER_PERIOD*400
         self.STATE_COUNTER = 0
@@ -182,24 +177,45 @@ class FSMNavigator(Node):
         # --------------------------- ------------------------------------- --------------------------- #
 
         # subscribeer to the camera feed 
-        self.subscription = self.create_subscription(
+        self.image_feed = self.create_subscription(
             msg_type=Image,
             topic='camera/image_raw',
             callback=self.read_image_callback,
             qos_profile=10
         )
 
-        # publisher for steering
-        self.cmd_vel_publisher = self.create_publisher(
-            msg_type=Twist,
-            topic='diff_drive_controller/cmd_vel_unstamped',
+        self.goal_pos_sub = self.create_subscription(
+            msg_type=Point,
+            topic='goal_position',
+            callback=self.listen_to_server_goal_position,
+            qos_profile=10
+        )
+
+        self.start_pos_sub = self.create_subscription(
+            msg_type=Point,
+            topic='start_position',
+            callback=self.listen_to_server_start_position,
+            qos_profile=10
+        )
+
+        self.state_sub = self.create_subscription(
+            msg_type=Point,
+            topic='state_FSM',
+            callback=self.listen_to_server_state,
+            qos_profile=10
+        )
+
+        self.direction_sub = self.create_subscription(
+            msg_type=Int16,
+            topic='direction',
+            callback=self.listen_to_server_direction,
             qos_profile=10
         )
 
         # publisher for processed image for visualization purposes
         self.image_publisher = self.create_publisher(
-            msg_type=Image,
-            topic='detection/result',
+            msg_type=CompressedImage,
+            topic='detection/result/compressed',
             qos_profile=10
         )
 
@@ -251,6 +267,9 @@ class FSMNavigator(Node):
             callback=self.publish_cmd_vel
         )
 
+        self.get_logger().info(f"start position: {self.start_position}")
+        self.get_logger().info(f"current position: {self.current_position}")
+        self.get_logger().info(f"direction : {self.direction}")
         self.get_logger().info(f"--- booting up complete ---")
 
     # ---------------------- ------------------ ----------------- #
@@ -267,6 +286,8 @@ class FSMNavigator(Node):
 
     def stop_moving(self):
         self.current_lin_vel = 0
+        self.prev_lin_vel = 0
+        self.prev_ang_vel = 0
         self.current_ang_vel = 0
 
     def drive_towards_center(self, error):
@@ -286,10 +307,10 @@ class FSMNavigator(Node):
     def publish_arm_trajectory(self,points = "pickup"):
         joints = ['turn_ARM', 'SERVO_LOWER_', 'SERVO_UPPER_']
 
-        if points == "pickup": points_traj = [0,1,0]
+        if points == "pickup": points_traj = [0,0,0]
         elif points == "normal": points_traj = [0,1,0]
-        elif points == "pickup": points_traj = [0,1,0]
-        else :  points_traj = [0,1,0]
+        elif points == "liftup": points_traj = [0,1,1]
+        else :  points_traj = [0,0,0]
         
         msg = JointTrajectory()
 
@@ -310,11 +331,13 @@ class FSMNavigator(Node):
     # ---------------------- ---------------- ----------------- #
 
     def notify_server(self):
+        if self.jetank_state == JetankState.DESTINATION_REACHED:
+            self.start_position = self.path[len(self.path) - 1] 
         # we can add more logic in here to allow distress signals 
         # or a new map request or smt
         # or pictures (QR codes)
         self.get_logger().info(f"{self.get_namespace()} Arrived at destination")
-        self.jetank_state = JetankState.INITIALIZE
+        self.jetank_state = JetankState.IDLE
 
     def update_position(self,init: bool=False):
         current_index = self.path.index(self.current_position)
@@ -327,13 +350,12 @@ class FSMNavigator(Node):
                 self.current_position = self.path[current_index + 1]
 
                 if self.current_position == self.goal_position: 
-                    self.get_logger().info(f"{self.get_namespace()} Arrived at destination")
                     self.jetank_state = JetankState.DESTINATION_REACHED
                 else:
                     self.next_position = self.path[current_index + 2]
                 
-            self.get_logger().info(f'Updating : current position {self.current_position}')
-            self.get_logger().info(f'Updating : next position {self.next_position}')
+        self.get_logger().info(f'Updating : current position {self.current_position}')
+        self.get_logger().info(f'Updating : next position {self.next_position}')
 
     def update_direction(self):
         if self.direction_turn == Turning.CLOCK_WISE:
@@ -467,14 +489,6 @@ class FSMNavigator(Node):
 
         return True
     
-    def listen_to_server(self):
-        # TODO => request from Zenoh topic instead from the server
-        self.goal_position = (0,0)
-        while self.goal_position == self.current_position: 
-            self.goal_position = (random.randint(0,len(self.map[0])),random.randint(0,len(self.map)))
-        
-        self.get_logger().info(f"SERVER sending {self.get_namespace()} to destination {self.goal_position}")
-
     def smoother(self,cx,cy): 
         # https://en.wikipedia.org/wiki/Moving_average
         # smoothing factor (0 = very smooth, 1 = instant)
@@ -497,7 +511,7 @@ class FSMNavigator(Node):
         height , width , channels = self.cv_image.shape
         roi = self.cv_image[
             int(height/2 + 100):int(height),
-            int(width/5):int(4*width/5)
+            int(width/10):int(9*width/10)
         ]
         return roi
 
@@ -506,20 +520,25 @@ class FSMNavigator(Node):
         # https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html
         # this basically a convulution but without any complicated kernel 
         kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.erode(mask, kernel,iterations=1)
-        mask = cv2.dilate(mask, kernel,iterations=1)
+        # mask = cv2.erode(mask, kernel,iterations=1)
+        # mask = cv2.dilate(mask, kernel,iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,kernel)
+
         return mask
 
     def create_masks(self,hsv):
         # Masks
         # GREEN
         self.green_mask = cv2.inRange(hsv, self.lower_green, self.upper_green)
+        self.green_mask = self.morph_filter(self.green_mask)
         # BLUE
         self.blue_mask = cv2.inRange(hsv, self.lower_blue, self.upper_blue)
+        self.blue_mask = self.morph_filter(self.blue_mask)
         # RED
         red_mask1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
         red_mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         self.red_mask = cv2.bitwise_or(red_mask1, red_mask2)
+        self.red_mask = self.morph_filter(self.red_mask)
 
     def try_detect_dots(self):
         to_examine = [ 
@@ -542,6 +561,7 @@ class FSMNavigator(Node):
                     # was and switch to a dot detected state as following a line
                     # is not our priority anymore 
                     self.dot_color_detected = dot_type
+                    self.dot_detected = True
                     return True
         return False
 
@@ -555,14 +575,14 @@ class FSMNavigator(Node):
         if self.jetank_state == JetankState.DOT_DETECTED:
             if self.dot_color_detected == DotType.RED:
                 contours, _ = cv2.findContours(self.red_mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-                contour_clr = (0,0,255)
+                contour_clr = (255,0,0)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
-                contour_clr = (255,0,0)
+                contour_clr = (0,0,255)
             else:
                 return False
             
-        elif self.jetank_state == JetankState.FOLLOW_LINE:
+        elif self.jetank_state == JetankState.FOLLOW_LINE or self.jetank_state == JetankState.IDLE:
             contours, _ = cv2.findContours(self.green_mask,1, cv2.CHAIN_APPROX_NONE)
             contour_clr = (0,255,0)
 
@@ -617,13 +637,13 @@ class FSMNavigator(Node):
                 # check if green line is centered (within margin) on the right side
                 # depending on the turn direction
                 if self.direction_turn == Turning.CLOCK_WISE:
-                    if image_center_x < smoothed_cx and abs(smoothed_cx - image_center_x) < self.MAX_ALIGNMENT_ERROR:
+                    if image_center_x < cx  < image_center_x + self.MAX_ALIGNMENT_ERROR:
                         cv2.circle(roi, (smoothed_cx, smoothed_cy), 5, (0, 255, 0), 2)
                         # ready to go  
                         return True  
                     
                 elif self.direction_turn == Turning.ANTI_CLOCK_WISE:
-                    if image_center_x > smoothed_cx and abs(smoothed_cx - image_center_x) < self.MAX_ALIGNMENT_ERROR:
+                    if image_center_x > cx  > image_center_x - self.MAX_ALIGNMENT_ERROR:
                         cv2.circle(roi, (smoothed_cx, smoothed_cy), 5, (0, 255, 0), 2)
                         # ready to go  
                         return True 
@@ -645,38 +665,61 @@ class FSMNavigator(Node):
 
         # once we have created our different mask we can process these masks
         # based upon our state we're in.
+
+        # ================================================= #
         if self.jetank_state == JetankState.TURN_ON_SPOT:
-            realigned = self.try_realign_after_turn(roi)
-            if realigned:
-                self.jetank_state = JetankState.DECIDE_DIRECTION
-                self.get_logger().info("Realigned with green line. Switching to DECIDE_DIRECTION.")
-        
+            realigned = False
+            if not self.dead_reckoning_active:
+                self.dead_reckoning_active = True
+                self.line_disseappered_at_time = time.perf_counter() 
+            
+            elif self.dead_reckoning_active:
+                time_diff = time.perf_counter() - self.line_disseappered_at_time
+                if time_diff > self.DEAD_RECKONING_THRESHOLD:
+                    realigned = self.try_realign_after_turn(roi)
+                    if realigned:
+                        self.dead_reckoning_active = False
+                        self.line_disseappered_at_time = 0
+                        self.jetank_state = JetankState.DECIDE_DIRECTION
+                        self.get_logger().info("Realigned with green line. Switching to DECIDE_DIRECTION.")
+                else:
+                    self.get_logger().info(f"Waiting... {time_diff:.2f}s")
+            
+        # ================================================= #
         elif self.jetank_state == JetankState.FOLLOW_LINE:
             self.detect_and_center(roi)
-            dot_detected = self.try_detect_dots()
-            if dot_detected:
+            self.try_detect_dots()
+            
+            if self.dot_detected:
                 self.jetank_state = JetankState.DOT_DETECTED
                 self.get_logger().info("Dot detected. Switching to DOT_DETECTED.")
 
+        # ================================================= #
         elif self.jetank_state == JetankState.DOT_DETECTED:
             self.detect_and_center(roi)
-            dot_detected = self.try_detect_dots()
+            self.try_detect_dots()
 
-            if not dot_detected and not self.dead_reckoning_active:
-                self.dot_disseappered_at_time = time.time()
+            if not self.dot_detected and not self.dead_reckoning_active:
+                self.dot_disseappered_at_time = time.perf_counter()
+                self.get_logger().info(f"Dot disappeared at time {self.dot_disseappered_at_time:.2f}s")
                 self.dead_reckoning_active = True
 
             elif self.dead_reckoning_active:
-                time_diff = time.time() - self.dot_disseappered_at_time
+                time_diff = time.perf_counter() - self.dot_disseappered_at_time
                 # using a dead reckoning approach (found no other solution)
                 # https://www.cavliwireless.com/blog/not-mini/what-is-dead-reckoning
-                if time_diff < self.DEAD_RECKONING_THRESHOLD:
+                if time_diff > self.DEAD_RECKONING_THRESHOLD:
                     self.dead_reckoning_active = False
                     self.dot_disseappered_at_time = 0
                     self.jetank_state = JetankState.DECIDE_DIRECTION
-                    self.get_logger().info("Dot disappeared. Switching to DECIDE_DIRECTION.")
+                    self.get_logger().info(f"Dot disappeared {time_diff:.2f}. Switching to DECIDE_DIRECTION.")
                 else:
                     self.get_logger().info(f"Waiting... {time_diff:.2f}s")
+
+        # ================================================= #
+        elif self.jetank_state == JetankState.IDLE:
+            self.detect_and_center(roi)
+
 
         # for debugging purposes (can be removed)
         self.mask_publisher_green.publish(
@@ -693,13 +736,53 @@ class FSMNavigator(Node):
         # publish the raw image with some anottations on it if any 
         # mostly for debugging purposes (can be removed but not recommended)
         self.image_publisher.publish(
-            self.bridge.cv2_to_imgmsg(roi,encoding='rgb8')
+            self.bridge.cv2_to_compressed_imgmsg(roi)
         )
 
 
     # ---------------------- ------------------ ----------------- #
     # ---------------------- Callback functions ----------------- #
     # ---------------------- ------------------ ----------------- #
+
+    def listen_to_server_goal_position(self,msg: Point):
+        # TODO => request from Zenoh topic instead which comes from the server  
+        self.goal_position = (int(msg.x),int(msg.y))      
+        self.get_logger().info(f"SERVER sending to {self.get_namespace()} goal position: {self.goal_position}")
+        if self.goal_position == self.current_position:
+            self.notify_server()
+        else:
+            self.jetank_state = JetankState.INITIALIZE
+
+    def listen_to_server_start_position(self,msg: Point):
+        self.start_position = (int(msg.x),int(msg.y))      
+        self.current_position = copy.deepcopy(self.start_position)
+        self.get_logger().info(f"SERVER sending to {self.get_namespace()} start position: {self.start_position}")
+
+    def listen_to_server_state(self,msg: Int16):
+        state = int(msg.data)
+        new_state = JetankState.IDLE
+        if   state == JetankState.INITIALIZE.value : new_state = JetankState.INITIALIZE	
+        elif state == JetankState.FOLLOW_LINE.value : new_state = JetankState.FOLLOW_LINE	
+        elif state == JetankState.DOT_DETECTED.value : new_state = JetankState.DOT_DETECTED
+        elif state == JetankState.TURN_ON_SPOT.value : new_state = JetankState.TURN_ON_SPOT
+        elif state == JetankState.DRIVE_FORWARD.value : new_state = JetankState.DRIVE_FORWARD
+        elif state == JetankState.DECIDE_DIRECTION.value : new_state = JetankState.DECIDE_DIRECTION
+        elif state == JetankState.PICK_UP_PACKAGE.value : new_state = JetankState.PICK_UP_PACKAGE
+        elif state == JetankState.DESTINATION_REACHED.value : new_state = JetankState.DESTINATION_REACHED
+        elif state == JetankState.IDLE.value : new_state = JetankState.IDLE
+        self.jetank_state = new_state
+        self.get_logger().info(f"SERVER sending to {self.get_namespace()} state: {self.jetank_state}")
+
+    def listen_to_server_direction(self,msg: Int16):
+        direction = int(msg.data)
+        new_direction = Directions.NORTH
+        if   direction == Directions.NORTH.value : new_direction = Directions.NORTH	
+        elif direction == Directions.EAST.value : new_direction = Directions.EAST	
+        elif direction == Directions.SOUTH.value : new_direction = Directions.SOUTH
+        elif direction == Directions.WEST.value : new_direction = Directions.WEST
+        self.direction = new_direction
+        self.get_logger().info(f"SERVER sending to {self.get_namespace()} direction: {self.direction}")
+
 
     def read_image_callback(self, msg):
         try:
@@ -712,20 +795,21 @@ class FSMNavigator(Node):
             return
         
     def FSMloop(self):
-        # 1)
-        # [INITIALIZE] → [FOLLOW_LINE]
+        # (1)
+        # [IDLE] --> listen to server --> /<ns>/goal_position --> [INITIALIZE] 
+        # [INITIALIZE] --> [FOLLOW_LINE]
 
-        # 2)
+        # (2)
         # [FOLLOW_LINE] --> dot detected --> [DOT_DETECTED]
-        # [DOT_DETECTED] --> [DECIDE_DIRECTION]
-        # [DECIDE_DIRECTION] --> [TURNING] or [DRIVE_FORWARD]
+        # [DOT_DETECTED] --> update position --> [DECIDE_DIRECTION] or [DESTINATION_REACHED]
+        # [DECIDE_DIRECTION] --> [TURN_ON_SPOT] or [DRIVE_FORWARD]
 
-        # 3)
-        # [TURNING] --> [FOLLOW_LINE]
-        # [DRIVE_FORWARD] --> [FOLLOW_LINE]
+        # (3)
+        # [TURN_ON_SPOT] --> update direction --> [DECIDE_DIRECTION] --> (2)
+        # [DRIVE_FORWARD] --> (2)
 
-        # 4) 
-        # [FOLLOW_LINE] --> destination matched --> [DESTINATION_REACHED]
+        # (4)
+        # [DESTINATION_REACHED] --> notify server --> [IDLE] --> (1)
 
         # TODO : Obstacle detected => set point as BLOCKED or VOID => recalculate route
         # TODO : Map saturated => request new map from the server
@@ -740,14 +824,17 @@ class FSMNavigator(Node):
             self.update_direction()
             self.stop_moving()
 
+        if self.prev_jetank_state != JetankState.IDLE and self.jetank_state == JetankState.IDLE:
+            self.stop_moving()
+
         # ----------- state logger ----------- #
         if self.prev_jetank_state is not self.jetank_state:
             self.get_logger().info(f'--- STATE : {self.jetank_state} ---')
             self.prev_jetank_state = self.jetank_state
 
         # ----------- state condition and logic ----------- #
+        # ================================================= #
         if self.jetank_state == JetankState.INITIALIZE:
-            self.listen_to_server()
             if not self.a_star():
                 self.get_logger().error(f'NO available path')
                 self.jetank_state = JetankState.INITIALIZE
@@ -756,12 +843,14 @@ class FSMNavigator(Node):
                 self.get_logger().info(f'PATH : {self.path}')
                 self.jetank_state = JetankState.DECIDE_DIRECTION
 
+        # ================================================= #
         elif self.jetank_state == JetankState.DECIDE_DIRECTION:
             self.goal_direction = self.calculate_direction()
             self.get_logger().info(f'Goal direction : {self.goal_direction}')
             self.get_logger().info(f'Current direction : {self.direction}')
             if self.goal_direction == -1: 
                 self.get_logger().error(f'Invalid direction {self.goal_direction}')
+                self.jetank_state = JetankState.IDLE
 
             elif self.direction != self.goal_direction:
                 self.direction_turn = self.calculate_turn(self.goal_direction)
@@ -771,22 +860,35 @@ class FSMNavigator(Node):
             elif self.direction == self.goal_direction:
                 self.jetank_state = JetankState.DRIVE_FORWARD
 
+        # ================================================= #
         elif self.jetank_state == JetankState.FOLLOW_LINE:
             self.drive_towards_center(self.error)
 
+        # ================================================= #
         elif self.jetank_state == JetankState.DOT_DETECTED:
             self.drive_towards_center(self.error)
             
+        # ================================================= #
         elif self.jetank_state == JetankState.TURN_ON_SPOT:
             self.turn_on_spot(self.direction_turn.value)
 
+        # ================================================= #
         elif self.jetank_state == JetankState.DRIVE_FORWARD:
             self.drive_straight()
             self.jetank_state = JetankState.FOLLOW_LINE
 
+        # ================================================= #
         elif self.jetank_state == JetankState.DESTINATION_REACHED:
             self.notify_server()
-            self.stop_moving()
+
+        # ================================================= #
+        elif self.jetank_state == JetankState.IDLE:
+            pass
+
+        # ================================================= #
+        elif self.jetank_state == JetankState.PICK_UP_PACKAGE:
+            pass
+         
 
 
 def main(args=None):

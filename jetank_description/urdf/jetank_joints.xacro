@@ -81,6 +81,13 @@
         <limit lower="0" upper="${PI/4}" effort="75" velocity="10" />
     </xacro:joint>
 
+    <!-- CAMERA -->
+    <xacro:joint joint_name="ARM_LOWER_rigid_CAMERA_HOLDER_ARM_LOWER" parent_name="ARM_LOWER" child_name="CAM_HOLDER" joint_type="revolute">
+        <origin xyz="-0.0248 0 0.0344" rpy="${PI/2} ${-PI/16} 0" /> 
+        <axis xyz="1 0 0"/>
+        <limit lower="0" upper="${PI/4}" effort="75" velocity="10"/>
+    </xacro:joint>
+
     <!-- fixed joints -->
     <xacro:joint joint_name="base_link_rigid_ANTENNA_L_BASE_JOINT" parent_name="base_link" child_name="ANTENNA_L" joint_type="fixed"> 
         <origin xyz="0.0718 -0.0442 0.0576" rpy="${PI/2} 0 -${PI}" />
@@ -99,11 +106,6 @@
     </xacro:joint>
     <xacro:joint joint_name="CAM_HOLDER_rigid_CAMERA_CAMERA_HOLDER" parent_name="CAM_HOLDER" child_name="CAMERA" joint_type="fixed">
         <origin xyz="-0.0338 0 -0.0001" rpy="${PI/2} 0 0" />  
-        <axis/>
-        <limit/>
-    </xacro:joint>
-    <xacro:joint joint_name="ARM_LOWER_rigid_CAMERA_HOLDER_ARM_LOWER" parent_name="ARM_LOWER" child_name="CAM_HOLDER" joint_type="fixed">
-        <origin xyz="-0.0248 0 0.0344" rpy="${PI/2} 0 0" /> 
         <axis/>
         <limit/>
     </xacro:joint>
