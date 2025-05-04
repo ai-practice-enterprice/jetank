@@ -37,6 +37,7 @@ class JetankState(Enum):
     PICK_UP_PACKAGE = 7
     DESTINATION_REACHED = 8
     IDLE = 9
+    DANGER = 10
 
 class DotType(Enum):
     RED = 1
@@ -887,6 +888,10 @@ class FSMNavigator(Node):
 
         # ================================================= #
         elif self.jetank_state == JetankState.PICK_UP_PACKAGE:
+            pass
+         
+        # ================================================= #
+        elif self.jetank_state == JetankState.DANGER:
             pass
          
 
