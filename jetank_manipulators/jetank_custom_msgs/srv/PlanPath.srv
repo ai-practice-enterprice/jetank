@@ -1,5 +1,0 @@
-int32[2] start
-int32[2] goal
----
-int32 size
-int32[] path

@@ -37,6 +37,8 @@ class JetankState(Enum):
     PICK_UP_PACKAGE = 7
     DESTINATION_REACHED = 8
     IDLE = 9
+    DANGER = 10
+    PUT_DOWN_PACKAGE = 11
 
 class DotType(Enum):
     RED = 1
@@ -184,6 +186,7 @@ class FSMNavigator(Node):
             qos_profile=10
         )
 
+        # subscribers for the different robot params
         self.goal_pos_sub = self.create_subscription(
             msg_type=Point,
             topic='goal_position',
@@ -199,7 +202,7 @@ class FSMNavigator(Node):
         )
 
         self.state_sub = self.create_subscription(
-            msg_type=Point,
+            msg_type=Int16,
             topic='state_FSM',
             callback=self.listen_to_server_state,
             qos_profile=10
@@ -212,10 +215,18 @@ class FSMNavigator(Node):
             qos_profile=10
         )
 
+        # subscriber for midas
+        self.midas_detect_result = self.create_subscription(
+            msg_type=Twist,
+            topic='midas_detection',
+            callback=self.listen_to_midas_node,
+            qos_profile=10
+        ) 
+
         # publisher for processed image for visualization purposes
         self.image_publisher = self.create_publisher(
-            msg_type=CompressedImage,
-            topic='detection/result/compressed',
+            msg_type=Image,
+            topic='detection/result',
             qos_profile=10
         )
 
@@ -322,8 +333,28 @@ class FSMNavigator(Node):
 
         self.arm_traj_publisher.publish(msg)
 
-    def publish_arm_ik(self):        
+    def publish_arm_ik(self,points: str):        
         msg = Twist()
+
+        if points == "pickup": 
+            msg.linear.x = 0
+            msg.linear.y = 0
+            msg.linear.z = 0
+        elif points == "rest_pos":
+            msg.linear.x = 0
+            msg.linear.y = 0
+            msg.linear.z = 0
+
+        elif points == "putdown":
+            msg.linear.x = 0
+            msg.linear.y = 0
+            msg.linear.z = 0
+
+        else :  
+            msg.linear.x = 0
+            msg.linear.y = 0
+            msg.linear.z = 0
+
         self.ik_arm_publisher.publish(msg)
 
     # ---------------------- ---------------- ----------------- #
@@ -332,12 +363,25 @@ class FSMNavigator(Node):
 
     def notify_server(self):
         if self.jetank_state == JetankState.DESTINATION_REACHED:
+            self.get_logger().info(f"{self.get_namespace()} Arrived at destination")
             self.start_position = self.path[len(self.path) - 1] 
-        # we can add more logic in here to allow distress signals 
-        # or a new map request or smt
-        # or pictures (QR codes)
-        self.get_logger().info(f"{self.get_namespace()} Arrived at destination")
-        self.jetank_state = JetankState.IDLE
+            
+            if self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.ZONE_IN.value:
+                self.get_logger().info(f"{self.get_namespace()} Picking up package")
+                self.jetank_state = JetankState.PICK_UP_PACKAGE
+            
+            elif self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.STORAGE.value:
+                self.get_logger().info(f"{self.get_namespace()} Putting down package")
+                self.jetank_state = JetankState.PUT_DOWN_PACKAGE
+            
+            else: 
+                self.jetank_state = JetankState.IDLE
+
+        else:
+            # we can add more logic in here to allow distress signals 
+            # or a new map request or smt
+            # or pictures (QR codes)
+            self.jetank_state = JetankState.IDLE
 
     def update_position(self,init: bool=False):
         current_index = self.path.index(self.current_position)
@@ -736,7 +780,7 @@ class FSMNavigator(Node):
         # publish the raw image with some anottations on it if any 
         # mostly for debugging purposes (can be removed but not recommended)
         self.image_publisher.publish(
-            self.bridge.cv2_to_compressed_imgmsg(roi)
+            self.bridge.cv2_to_imgmsg(roi)
         )
 
 
@@ -770,6 +814,7 @@ class FSMNavigator(Node):
         elif state == JetankState.PICK_UP_PACKAGE.value : new_state = JetankState.PICK_UP_PACKAGE
         elif state == JetankState.DESTINATION_REACHED.value : new_state = JetankState.DESTINATION_REACHED
         elif state == JetankState.IDLE.value : new_state = JetankState.IDLE
+        elif state == JetankState.IDLE.value : new_state = JetankState.DANGER
         self.jetank_state = new_state
         self.get_logger().info(f"SERVER sending to {self.get_namespace()} state: {self.jetank_state}")
 
@@ -783,6 +828,14 @@ class FSMNavigator(Node):
         self.direction = new_direction
         self.get_logger().info(f"SERVER sending to {self.get_namespace()} direction: {self.direction}")
 
+    def listen_to_midas_node(self,msg: Twist):
+        danger = int(msg.linear.x)
+        # 1 == no danger as linear X is positive
+        # 0 == danger as linear X is negative
+        if danger == 1 and self.jetank_state == JetankState.DANGER:
+            self.jetank_state = JetankState.DRIVE_FORWARD
+        elif danger == 0: 
+            self.jetank_state = JetankState.DANGER
 
     def read_image_callback(self, msg):
         try:
@@ -887,7 +940,15 @@ class FSMNavigator(Node):
 
         # ================================================= #
         elif self.jetank_state == JetankState.PICK_UP_PACKAGE:
-            pass
+            self.publish_arm_ik(points="pickup")
+
+        # ================================================= #
+        elif self.jetank_state == JetankState.PUT_DOWN_PACKAGE:
+            self.publish_arm_ik(points="putdown")
+         
+        # ================================================= #
+        elif self.jetank_state == JetankState.DANGER:
+            self.stop_moving()
          
 
 
