@@ -21,11 +21,11 @@ def generate_launch_description():
 
     midas_arg = DeclareLaunchArgument(
         name='midas_on',
-        default_value='true',
+        default_value='false',
         description='[ARG] turn on/off the midas node on startup'
     )
     camera_gst_arg = DeclareLaunchArgument(
-        name='camera_gts_on',
+        name='camera_gst_on',
         default_value='false',
         description='[ARG] turn on/off the gstreamer node on startup (ONLY REQUIRED WHEN USING THE JETSON0)'
     )
