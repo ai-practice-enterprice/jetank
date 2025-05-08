@@ -65,7 +65,6 @@ def generate_launch_description():
             # https://discourse.ros.org/t/tf-tree-in-a-multi-robot-setup-in-ros2/41426/3
             # https://github.com/ros2/geometry2/issues/433
             remappings=[
-                ('/clock','clock'),
                 ('/tf','tf'),
                 ('/tf_static','tf_static'),
             ]

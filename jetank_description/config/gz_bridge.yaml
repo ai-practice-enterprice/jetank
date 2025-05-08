@@ -1,10 +1,13 @@
-- ros_topic_name: "clock"
+- ros_topic_name: "/clock"
   gz_topic_name: "clock"
   ros_type_name: "rosgraph_msgs/msg/Clock"
   gz_type_name: "gz.msgs.Clock"
   direction: GZ_TO_ROS
 
 # gz topic published by Sensors plugin (Camera)
+# ! remapping of the robot's camera info requires only to change the camera
+# https://docs.ros.org/en/rolling/p/image_pipeline/tutorials.html#remapping-camera-info-topics 
+# https://github.com/ros-perception/image_pipeline/issues/687
 - ros_topic_name: "camera/camera_info"
   gz_topic_name: "camera/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
