@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node , ParameterDescriptor
-from std_msgs.msg import Int16 
+from std_msgs.msg import Int16 , Bool
 from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist , Point
 from trajectory_msgs.msg import JointTrajectory
@@ -94,15 +94,14 @@ class FSMNavigator(Node):
         # --------------------------- state send by Server --------------------------- # 
         # --------------------------- -------------------- --------------------------- #
         self.goal_position = (0,0)
-        self.start_position = (4,0) 
+        self.start_position = (0,0) 
         self.current_position = copy.deepcopy(self.start_position)
         self.direction = Directions.SOUTH
         self.map = [
-            [9,9,9,9,9,],
-            [9,9,9,9,9,],
-            [9,9,9,9,9,],
-            [9,9,9,9,9,],
-            [9,9,9,9,9,],
+            [3,9,3,],
+            [4,9,4,],
+            [3,9,3,],
+            [4,9,4,],
         ]
 
         # --------------------------- ----------- --------------------------- #
@@ -122,16 +121,22 @@ class FSMNavigator(Node):
         self.prev_jetank_state = JetankState.IDLE
         self.direction_turn = Turning.CLOCK_WISE
 
-        self.line_disseappered_at_time = 0
-        self.dot_disseappered_at_time = 0
+        self.line_disseappered_at_time = 0.0
+        self.dot_disseappered_at_time = 0.0
+        self.last_dot_time_since_FOLLOW_LINE_state = 0.0
+        self.is_arm_published = False
 
         self.alpha_smoother = 0.3 
+
+        self.error = 0
         
         ## user-defined parameters:
+        # Amount of time driving forwards (since dots are quite close it would be impossible that the Jetank drives more then +/- 10sec)
+        self.DRIVE_FORWARD_THRESHOLD = 30.0
         # Amount of time between a observation (dot or line disappeared) and action (stop , move forwards, realign)
-        self.DEAD_RECKONING_THRESHOLD = 2.4
+        self.DEAD_RECKONING_THRESHOLD = 1.0
         # Minimum size for a contour to be considered anything
-        self.MIN_AREA = 100
+        self.MIN_AREA = 6000
         # Proportional constant to be applied on speed when turning 
         # (Multiplied by the error value)
         self.KP = 1.1/100 
@@ -142,11 +147,11 @@ class FSMNavigator(Node):
         # The maximum error value for which the robot is aligned when turning
         self.MAX_ALIGNMENT_ERROR = 50
         # Linear velocity (linear.x in Twist) 
-        self.LIN_VEL = 0.15
+        self.LIN_VEL = 0.5
         self.current_lin_vel = 0
         self.prev_lin_vel = 0
         # Angular velocity (angular.z in Twist)
-        self.ANG_VEL = 0.75
+        self.ANG_VEL = 4
         self.current_ang_vel = 0 
         self.prev_ang_vel = 0
 
@@ -163,15 +168,15 @@ class FSMNavigator(Node):
         # but because OpenCV wants to keep 8bit unsigned integers 
         # 360deg is mapped to 180 (x deg => x/2) 
         # 100% is mapped to 255   (x %   => x/100 * 255)
-        self.lower_green = np.array([40, 70, 50])
-        self.upper_green = np.array([80, 255, 255])
+        self.lower_green = np.array([60, 50, 130])
+        self.upper_green = np.array([100, 255, 255])
 
-        self.lower_blue = np.array([110, 50, 50])
+        self.lower_blue = np.array([110, 50, 130])
         self.upper_blue = np.array([130, 255, 255])
 
-        self.lower_red1 = np.array([0, 70, 50])
-        self.upper_red1 = np.array([5, 255, 255])
-        self.lower_red2 = np.array([170, 70, 50])
+        self.lower_red1 = np.array([0, 50, 130])
+        self.upper_red1 = np.array([20, 255, 255])
+        self.lower_red2 = np.array([175, 50, 130])
         self.upper_red2 = np.array([179, 255, 255])
  
         # --------------------------- ------------------------------------- --------------------------- #
@@ -180,8 +185,8 @@ class FSMNavigator(Node):
 
         # subscribeer to the camera feed 
         self.image_feed = self.create_subscription(
-            msg_type=Image,
-            topic='camera/image_raw',
+            msg_type=CompressedImage,
+            topic='camera/image_raw/compressed',
             callback=self.read_image_callback,
             qos_profile=10
         )
@@ -252,7 +257,7 @@ class FSMNavigator(Node):
         # publisher for robot movement commands => ros2_control controller
         self.cmd_vel_publisher = self.create_publisher(
             msg_type=Twist,
-            topic='diff_drive_controller/cmd_vel_unstamped',
+            topic='cmd_vel',
             qos_profile=10
         )
 
@@ -264,8 +269,14 @@ class FSMNavigator(Node):
 
         self.ik_arm_publisher = self.create_publisher(
             msg_type=Twist,
-            topic='ik_topic',
+            topic='ik_input',
             qos_profile=10
+        )
+
+        self.gripper_publisher = self.create_publisher(
+            msg_type=Bool,
+            topic="arm_gripper",
+            qos_profile=10,
         )
 
         self.main_loop = self.create_timer(
@@ -302,7 +313,11 @@ class FSMNavigator(Node):
         self.current_ang_vel = 0
 
     def drive_towards_center(self, error):
-        self.current_lin_vel = self.LIN_VEL
+        try:
+            proportion = (self.MAX_ERROR + 5) / abs(error)
+        except ZeroDivisionError:
+            proportion = 1
+        self.current_lin_vel = proportion*self.LIN_VEL
         self.current_ang_vel = self.KP * error
 
     def publish_cmd_vel(self):
@@ -315,47 +330,37 @@ class FSMNavigator(Node):
     # ---------------------- Arm functions ----------------- #
     # ---------------------- ------------- ----------------- #
 
-    def publish_arm_trajectory(self,points = "pickup"):
-        joints = ['turn_ARM', 'SERVO_LOWER_', 'SERVO_UPPER_']
+    def publish_arm_ik(self,points: str):    
+        if not self.is_arm_published: 
+            self.is_arm_published = True    
+            msg = Twist()
 
-        if points == "pickup": points_traj = [0,0,0]
-        elif points == "normal": points_traj = [0,1,0]
-        elif points == "liftup": points_traj = [0,1,1]
-        else :  points_traj = [0,0,0]
-        
-        msg = JointTrajectory()
+            if points == "pickup": 
+                msg.linear.x = 0.12
+                msg.linear.y = 0.04
+                msg.linear.z = 0.20
 
-        for joint in joints:
-            msg.joint_names.append(joint)
+            elif points == "rest_pos":
+                msg.linear.x = 0.0
+                msg.linear.y = 0.0
+                msg.linear.z = 0.0
 
-        for point in points_traj:
-            msg.points.append(point)
+            elif points == "putdown":
+                msg.linear.x = 0.14
+                msg.linear.y = 0.0
+                msg.linear.z = -0.14
 
-        self.arm_traj_publisher.publish(msg)
+            else :  
+                msg.linear.x = 0.0
+                msg.linear.y = 0.0
+                msg.linear.z = 0.0
 
-    def publish_arm_ik(self,points: str):        
-        msg = Twist()
+            self.ik_arm_publisher.publish(msg)
 
-        if points == "pickup": 
-            msg.linear.x = 0
-            msg.linear.y = 0
-            msg.linear.z = 0
-        elif points == "rest_pos":
-            msg.linear.x = 0
-            msg.linear.y = 0
-            msg.linear.z = 0
-
-        elif points == "putdown":
-            msg.linear.x = 0
-            msg.linear.y = 0
-            msg.linear.z = 0
-
-        else :  
-            msg.linear.x = 0
-            msg.linear.y = 0
-            msg.linear.z = 0
-
-        self.ik_arm_publisher.publish(msg)
+    def publish_gripper(self,open: bool):
+        msg = Bool()
+        msg.data = open
+        self.gripper_publisher.publish(msg)
 
     # ---------------------- ---------------- ----------------- #
     # ---------------------- Helper functions ----------------- #
@@ -587,7 +592,6 @@ class FSMNavigator(Node):
     def try_detect_dots(self):
         to_examine = [ 
             DotType.RED,
-            DotType.BLUE,
         ]
         for dot_type in to_examine:
             mask = self.red_mask 
@@ -600,14 +604,17 @@ class FSMNavigator(Node):
 
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for c in contours:
-                if cv2.contourArea(c) > self.MIN_AREA:
+                area_detected = cv2.contourArea(c)
+                if area_detected > self.MIN_AREA:
+                    self.get_logger().info(f"Area : {area_detected}")
                     # if a dot is detected we keep track what dot color it 
                     # was and switch to a dot detected state as following a line
                     # is not our priority anymore 
                     self.dot_color_detected = dot_type
                     self.dot_detected = True
                     return True
-        return False
+            self.dot_detected = False
+            return False
 
     def detect_and_center(self,roi):
         # the image is processed according to the state we're in. changing from state to state 
@@ -712,6 +719,8 @@ class FSMNavigator(Node):
 
         # ================================================= #
         if self.jetank_state == JetankState.TURN_ON_SPOT:
+            self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
+
             realigned = False
             if not self.dead_reckoning_active:
                 self.dead_reckoning_active = True
@@ -734,6 +743,15 @@ class FSMNavigator(Node):
             self.detect_and_center(roi)
             self.try_detect_dots()
             
+
+            time_diff = time.perf_counter() - self.last_dot_time_since_FOLLOW_LINE_state
+            if  time_diff > self.DRIVE_FORWARD_THRESHOLD:
+                self.jetank_state = JetankState.IDLE
+                self.get_logger().info("Timer exceeded. Switching to IDLE.")
+                self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
+
+            # self.get_logger().info(f"{self.dot_detected} && {self.dead_reckoning_active}")
+            
             if self.dot_detected:
                 self.jetank_state = JetankState.DOT_DETECTED
                 self.get_logger().info("Dot detected. Switching to DOT_DETECTED.")
@@ -743,10 +761,13 @@ class FSMNavigator(Node):
             self.detect_and_center(roi)
             self.try_detect_dots()
 
+            # self.get_logger().info(f"{self.dot_detected} && {self.dead_reckoning_active}")
+
             if not self.dot_detected and not self.dead_reckoning_active:
                 self.dot_disseappered_at_time = time.perf_counter()
                 self.get_logger().info(f"Dot disappeared at time {self.dot_disseappered_at_time:.2f}s")
                 self.dead_reckoning_active = True
+                self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
 
             elif self.dead_reckoning_active:
                 time_diff = time.perf_counter() - self.dot_disseappered_at_time
@@ -763,6 +784,8 @@ class FSMNavigator(Node):
         # ================================================= #
         elif self.jetank_state == JetankState.IDLE:
             self.detect_and_center(roi)
+            self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
+
 
 
         # for debugging purposes (can be removed)
@@ -839,7 +862,7 @@ class FSMNavigator(Node):
 
     def read_image_callback(self, msg):
         try:
-            self.cv_image = self.bridge.imgmsg_to_cv2(msg)
+            self.cv_image = self.bridge.compressed_imgmsg_to_cv2(msg)
             # 1) we crop our image to the desired space
             roi = self.crop_to_roi()
             self.process_image(roi)
@@ -882,6 +905,7 @@ class FSMNavigator(Node):
 
         # ----------- state logger ----------- #
         if self.prev_jetank_state is not self.jetank_state:
+            self.is_arm_published = False
             self.get_logger().info(f'--- STATE : {self.jetank_state} ---')
             self.prev_jetank_state = self.jetank_state
 
@@ -936,16 +960,27 @@ class FSMNavigator(Node):
 
         # ================================================= #
         elif self.jetank_state == JetankState.IDLE:
-            pass
+            self.publish_arm_ik(points="rest_pos")
 
         # ================================================= #
         elif self.jetank_state == JetankState.PICK_UP_PACKAGE:
+            self.publish_gripper(open=True)
+            time.sleep(4)
             self.publish_arm_ik(points="pickup")
+            time.sleep(4)
+            self.publish_gripper(open=False)
+            time.sleep(4)
+            self.jetank_state = JetankState.IDLE
+
 
         # ================================================= #
         elif self.jetank_state == JetankState.PUT_DOWN_PACKAGE:
             self.publish_arm_ik(points="putdown")
-         
+            time.sleep(4)
+            self.publish_gripper(open=True)
+            time.sleep(4)
+            self.jetank_state = JetankState.IDLE
+
         # ================================================= #
         elif self.jetank_state == JetankState.DANGER:
             self.stop_moving()
@@ -958,8 +993,9 @@ def main(args=None):
     try:
         rclpy.spin(navigator_node)
     except KeyboardInterrupt:
-        pass        
         navigator_node.stop_moving()
+
+    navigator_node.stop_moving()
     navigator_node.destroy_node()
     rclpy.shutdown()
 
