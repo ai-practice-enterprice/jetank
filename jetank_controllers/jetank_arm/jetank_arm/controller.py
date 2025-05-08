@@ -1,9 +1,10 @@
-LAPTOP = True
+LAPTOP = False
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from rcl_interfaces.msg import SetParametersResult
+from std_msgs.msg import Bool
 
 if not LAPTOP:
     import jetank_arm.TTLServo
@@ -13,19 +14,23 @@ class ServoController(Node):
     """
         This class controls the "wheels" of the Jetank. This includes driving and turning
     """
-
-    def __init__(self):
-        super().__init__('servo_controller')
+    def __init__(self, node_name="servo_controller", *, context = None, cli_args = None, namespace = None, use_global_arguments = True, enable_rosout = True, start_parameter_services = True, parameter_overrides = None, allow_undeclared_parameters = False, automatically_declare_parameters_from_overrides = False):
+        super().__init__(node_name, context=context, cli_args=cli_args, namespace=namespace, use_global_arguments=use_global_arguments, enable_rosout=enable_rosout, start_parameter_services=start_parameter_services, parameter_overrides=parameter_overrides, allow_undeclared_parameters=allow_undeclared_parameters, automatically_declare_parameters_from_overrides=automatically_declare_parameters_from_overrides)        
         for i in range(1, 6):
             setattr(self, f"s{i}_gain", 4)
 
         self.SetDefault()
         self.sub = self.create_subscription(Twist, 'ik_output', self.callback, 10)
+        self.sub = self.create_subscription(Bool, 'arm_gripper', self.callback1, 10)
 
     def callback(self, msg):
+
         self.setAngle(2, msg.angular.x - 90, 300)   # Set arm 1 into position
         self.setAngle(3, msg.angular.y - 90, 300)   # Set arm 2 into position
         self.setAngle(1, msg.angular.z, 300)        # Set base into position
+
+    def callback1(self, msg: Bool):
+        self.setAngle(4, 90 if msg.data else 0, 200)
 
     
     def setAngle(self, index: int, angle: float, speed: int):
@@ -35,8 +40,10 @@ class ServoController(Node):
             self.get_logger().info(f"Index: {index}, angle: {angle}, speed: {speed}")
 
     def SetDefault(self):
-        for i in range(1, 6):
+        for i in range(1, 4):
             self.setAngle(i, 0, 100)
+        self.setAngle(5, -10, 200)
+        self.setAngle(4, 0, 200)
 
     def destroy_node(self):
         self.SetDefault()

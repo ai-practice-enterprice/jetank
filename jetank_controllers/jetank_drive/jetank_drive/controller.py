@@ -5,7 +5,7 @@ from geometry_msgs.msg import Twist
 from Adafruit_MotorHAT import Adafruit_MotorHAT
 from rcl_interfaces.msg import SetParametersResult
 
-LAPTOP = True
+LAPTOP = False
 
 class MotorController(Node):
     """
@@ -13,8 +13,8 @@ class MotorController(Node):
     Can be extended to support any diff drive by overriding set_speed(),
     or any node that subscribes to the /jetbot/cmd_vel Twist message.
     """
-    def __init__(self):
-        super().__init__('jetank_drive')
+    def __init__(self, node_name="jetank_drive", *, context = None, cli_args = None, namespace = None, use_global_arguments = True, enable_rosout = True, start_parameter_services = True, parameter_overrides = None, allow_undeclared_parameters = False, automatically_declare_parameters_from_overrides = False):
+        super().__init__(node_name, context=context, cli_args=cli_args, namespace=namespace, use_global_arguments=use_global_arguments, enable_rosout=enable_rosout, start_parameter_services=start_parameter_services, parameter_overrides=parameter_overrides, allow_undeclared_parameters=allow_undeclared_parameters, automatically_declare_parameters_from_overrides=automatically_declare_parameters_from_overrides)
         
         self.sub = self.create_subscription(Twist, 'cmd_vel', self.twist_listener, 10)
         
@@ -172,8 +172,11 @@ def main(args=None):
     
     node = MotorControllerWaveshare()
     node.get_logger().info("listening for velocity messages...")
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.destroy_node()
     
-    rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
     
