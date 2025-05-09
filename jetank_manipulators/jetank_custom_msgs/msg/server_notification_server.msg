@@ -1,0 +1,2 @@
+string namespace
+string message
