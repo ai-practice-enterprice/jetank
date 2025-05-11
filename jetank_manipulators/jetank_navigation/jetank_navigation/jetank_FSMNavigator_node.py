@@ -2,16 +2,20 @@ import cv2
 import numpy as np
 import rclpy
 from rclpy.node import Node , ParameterDescriptor
-from std_msgs.msg import Int16 , Bool , Int16MultiArray , String
-from sensor_msgs.msg import Image, CompressedImage
-from geometry_msgs.msg import Twist , Point
-from trajectory_msgs.msg import JointTrajectory
 from cv_bridge import CvBridge, CvBridgeError
 from enum import Enum
 import random
 import heapq
 import time
 import copy
+
+from jetank_custom_msgs.msg._notification_server import NotificationServer
+from std_msgs.msg import Int16 , Bool , Int16MultiArray , String
+from sensor_msgs.msg import Image, CompressedImage
+from geometry_msgs.msg import Twist , Point
+from trajectory_msgs.msg import JointTrajectory
+
+
 
 # references from:
 # ----------------
@@ -91,9 +95,8 @@ class FSMNavigator(Node):
         self.bridge = CvBridge()
         self.cv_image = None
 
-        self.DEBUG = False
-        self.SIMULATION = False
-
+        self.DEBUG = True
+        self.SIMULATION = True
 
         # --------------------------- ----------- --------------------------- #
         # --------------------------- Robot state --------------------------- # 
@@ -105,10 +108,11 @@ class FSMNavigator(Node):
         
         self.path_plan = []
         self.map = [
-            [3,9,3,],
-            [4,9,4,],
-            [3,9,3,],
-            [4,9,4,],
+            [9,9,9,9,9],
+            [9,9,9,9,9],
+            [9,9,9,9,9],
+            [9,9,9,9,9],
+            [9,9,9,9,9],
         ]
 
         self.direction = Directions.SOUTH
@@ -117,27 +121,20 @@ class FSMNavigator(Node):
         self.prev_jetank_state = JetankState.IDLE
         self.is_arm_published = False
         self.recalculating_route = False
-
         
         ## user-defined parameters:
-        
-        # other options then Dead reckoninging ?
-        # Amount of time driving forwards (since dots are quite close it would be impossible that the Jetank drives more then +/- 10sec)
-        self.DRIVE_FORWARD_THRESHOLD = 30.0
-        # Amount of time between a observation (dot or line disappeared) and action (stop , move forwards, realign)
-        self.DEAD_RECKONING_THRESHOLD = 0.9
         self.dot_detected = False
         self.dead_reckoning_active = False
         self.line_disseappered_at_time = 0.0
         self.dot_disseappered_at_time = 0.0
         self.last_dot_time_since_FOLLOW_LINE_state = 0.0
 
-        # Minimum size for a contour to be considered anything
-        self.MIN_AREA = 6000
-
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
         self.MAX_ERROR = 30
+        # The maximum error value for which the robot is aligned when turning
+        self.MAX_ALIGNMENT_ERROR = 50
+
         self.error = 0
         self.prev_error = None
         self.prev_cx = None
@@ -152,39 +149,70 @@ class FSMNavigator(Node):
         self.KP = 1.1/100 
         self.KI = 1.1/100 
         self.KD = 1.1/100 
+        self.integral = 0
+        self.last_time = time.time()
 
-
-        # The maximum error value for which the robot is aligned when turning
-        self.MAX_ALIGNMENT_ERROR = 50
-        # Linear velocity (linear.x in Twist) 
-        self.LIN_VEL = 0.6
         self.current_lin_vel = 0
         self.prev_lin_vel = 0
-        # Angular velocity (angular.z in Twist)
-        self.ANG_VEL = 4
         self.current_ang_vel = 0 
         self.prev_ang_vel = 0
 
         self.TIMER_PERIOD = 1/30
-        
-        
-        # https://en.wikipedia.org/wiki/HSL_and_HSV
-        # https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html
-        # RED is a bit tricky due to range of the HSV color space 
-        # also HSV is defined as range from (0deg, 0%, 0%) to (360deg , 100% , 100%)
-        # but because OpenCV wants to keep 8bit unsigned integers 
-        # 360deg is mapped to 180 (x deg => x/2) 
-        # 100% is mapped to 255   (x %   => x/100 * 255)
-        self.lower_green = np.array([60, 50, 130])
-        self.upper_green = np.array([100, 255, 255])
 
-        self.lower_blue = np.array([110, 50, 130])
-        self.upper_blue = np.array([130, 255, 255])
+        if self.SIMULATION:
+            # Linear velocity (linear.x in Twist) 
+            self.LIN_VEL = 0.45
+            # Angular velocity (angular.z in Twist)
+            self.ANG_VEL = 2.0
+            # Amount of time driving forwards (since dots are quite close it would be impossible that the Jetank drives more then +/- 10sec)
+            self.DRIVE_FORWARD_THRESHOLD = 30.0
+            # Amount of time between a observation (dot or line disappeared) and action (stop , move forwards, realign)
+            self.DEAD_RECKONING_THRESHOLD = 1.0
+            # Minimum size for a contour to be considered anything
+            self.MIN_AREA = 6000
 
-        self.lower_red1 = np.array([0, 50, 130])
-        self.upper_red1 = np.array([20, 255, 255])
-        self.lower_red2 = np.array([175, 50, 130])
-        self.upper_red2 = np.array([179, 255, 255])
+            self.to_examine = [ 
+                DotType.BLUE,
+                DotType.RED,
+            ]
+
+            # https://en.wikipedia.org/wiki/HSL_and_HSV
+            # https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html
+            # RED is a bit tricky due to range of the HSV color space 
+            # also HSV is defined as range from (0deg, 0%, 0%) to (360deg , 100% , 100%)
+            # but because OpenCV wants to keep 8bit unsigned integers 
+            # 360deg is mapped to 180 (x deg => x/2) 
+            # 100% is mapped to 255   (x %   => x/100 * 255)
+            self.lower_green = np.array([30, 50, 50])
+            self.upper_green = np.array([60, 255, 255])
+    
+            self.lower_blue = np.array([70, 125, 125])
+            self.upper_blue = np.array([120, 255, 255])
+    
+            self.lower_red1 = np.array([0, 125, 125])
+            self.upper_red1 = np.array([15, 255, 255])
+            self.lower_red2 = np.array([170, 125, 125])
+            self.upper_red2 = np.array([179, 255, 255])
+        else:
+            self.LIN_VEL = 0.6
+            self.ANG_VEL = 4
+
+            self.MIN_AREA = 6000
+            
+            self.to_examine = [ 
+                DotType.RED,
+            ]
+
+            self.lower_green = np.array([60, 50, 130])
+            self.upper_green = np.array([100, 255, 255])
+
+            self.lower_blue = np.array([110, 50, 130])
+            self.upper_blue = np.array([130, 255, 255])
+
+            self.lower_red1 = np.array([0, 50, 130])
+            self.upper_red1 = np.array([20, 255, 255])
+            self.lower_red2 = np.array([175, 50, 130])
+            self.upper_red2 = np.array([179, 255, 255])
  
         # --------------------------- ------------------------------------- --------------------------- #
         # --------------------------- subscriptions , publishers and timers --------------------------- # 
@@ -202,7 +230,7 @@ class FSMNavigator(Node):
 
         # --------------------------- ------------------------------------- --------------------------- #
         # subscribers for the different robot params
-        # e.g.: ros2 topic pub /jetank_1/goal_position geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
+        # e.g.: ros2 topic pub /jetank_1/goal_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
         self.goal_pos_sub = self.create_subscription(
             msg_type=Point,
             topic='goal_position',
@@ -210,7 +238,7 @@ class FSMNavigator(Node):
             qos_profile=10
         )
 
-        # e.g.: ros2 topic pub /jetank_1/start_position geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
+        # e.g.: ros2 topic pub /jetank_1/start_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
         self.start_pos_sub = self.create_subscription(
             msg_type=Point,
             topic='start_position',
@@ -218,7 +246,7 @@ class FSMNavigator(Node):
             qos_profile=10
         )
 
-        # e.g.: ros2 topic pub /jetank_1/state_FSM std_msgs/Int16 "{data: 1}"
+        # e.g.: ros2 topic pub /jetank_1/state_FSM --once std_msgs/msg/nt16 "{data: 1}"
         self.state_sub = self.create_subscription(
             msg_type=Int16,
             topic='state_FSM',
@@ -226,7 +254,7 @@ class FSMNavigator(Node):
             qos_profile=10
         )
 
-        # e.g.: ros2 topic pub /jetank_1/direction std_msgs/Int16 "{data: 1}"
+        # e.g.: ros2 topic pub /jetank_1/direction --once std_msgs/msg/Int16 "{data: 1}"
         self.direction_sub = self.create_subscription(
             msg_type=Int16,
             topic='direction',
@@ -285,7 +313,7 @@ class FSMNavigator(Node):
         if self.SIMULATION:
             self.cmd_vel_publisher = self.create_publisher(
                 msg_type=Twist,
-                topic='diff_drive_controller/cmd_vel',
+                topic='diff_drive_controller/cmd_vel_unstamped',
                 qos_profile=10
             )
             self.arm_traj_publisher = self.create_publisher(
@@ -312,8 +340,8 @@ class FSMNavigator(Node):
 
         # --------------------------- ------------------------------------- --------------------------- #
         self.to_server_pub = self.create_publisher(
-            msg_type=String,
-            topic="/warehouse_ai_server",
+            msg_type=NotificationServer,
+            topic="/to_server",
             qos_profile=10,
         )
 
@@ -353,17 +381,12 @@ class FSMNavigator(Node):
         self.current_ang_vel = 0
 
     def drive_towards_center(self):
-        if self.prev_error is None :
-            self.prev_error = self.error
-        else:
-            self.prev_error = int((1 - self.alpha_smoother) * self.prev_error + self.alpha_smoother * self.error)
-
         try:
-            proportion = (self.MAX_ERROR) / abs(self.prev_error)
+            proportion = (self.MAX_ERROR) / abs(self.error)
         except ZeroDivisionError:
             proportion = 1
 
-        self.current_lin_vel = proportion*self.LIN_VEL
+        self.current_lin_vel = proportion * self.LIN_VEL
         self.current_ang_vel = self.KP * self.error
 
     def publish_cmd_vel(self):
@@ -377,7 +400,7 @@ class FSMNavigator(Node):
     # ---------------------- ------------- ----------------- #
 
     def publish_arm_ik(self,points: str):    
-        if not self.is_arm_published: 
+        if not self.is_arm_published and not self.SIMULATION: 
             self.is_arm_published = True    
             msg = Twist()
 
@@ -412,29 +435,27 @@ class FSMNavigator(Node):
     # ---------------------- Helper functions ----------------- #
     # ---------------------- ---------------- ----------------- #
 
+    def send_to_server(self,message : str,message_type: str = "info"):
+        self.get_logger().info(f"{self.get_namespace()} {message}")
+        
+        msg = NotificationServer()
+        msg.robot_namespace = self.get_namespace()
+        msg.robot_message = f"{self.get_namespace()} {message}"
+        msg.message_type = message_type.upper()
+        self.to_server_pub.publish(msg)
+
     def notify_server(self):
         if self.jetank_state == JetankState.DESTINATION_REACHED:
             self.start_position = self.path[len(self.path) - 1] 
- 
-            msg = String()
-            msg.data = f"{self.get_namespace()} Arrived at destination"
-            self.to_server_pub.publish(msg)
-            
-            self.get_logger().info(f"{self.get_namespace()} Arrived at destination")
-            
+            self.send_to_server("Arrived at destination",message_type="Info")
+
             if self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.ZONE_IN.value:
                 self.jetank_state = JetankState.PICK_UP_PACKAGE
-                msg.data = f"{self.get_namespace()} Picking up package"
-                self.to_server_pub.publish(msg)
+                self.send_to_server("Picking up package",message_type="Info")
                 
-                self.get_logger().info(f"{self.get_namespace()} Picking up package")
-            
             elif self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.STORAGE.value:
                 self.jetank_state = JetankState.PUT_DOWN_PACKAGE
-                msg.data = f"{self.get_namespace()} Putting down package"
-                self.to_server_pub.publish(msg)
-
-                self.get_logger().info(f"{self.get_namespace()} Putting down package")
+                self.send_to_server("Putting down package",message_type="Info")
             
             else: 
                 self.jetank_state = JetankState.IDLE
@@ -584,6 +605,13 @@ class FSMNavigator(Node):
 
         # once the goal_pos is reached, the algorithm works backward 
         # through the parent references to construct the optimal path from start_pos to goal_pos.
+        # so a backwards pass 
+        # e.g.: 
+        # prev pos <- next pos
+        # start (0,0) <- (0,1)
+        # (0,1) <- (1,1)
+        # (1,1) <- (1,2) end
+        # yields -> start -> (0,0) -> (0,1) -> (1,1) -> (1,2) -> end
         path = []
         current = self.goal_position
         while current != self.start_position:
@@ -648,11 +676,7 @@ class FSMNavigator(Node):
         self.red_mask = self.morph_filter(self.red_mask)
 
     def try_detect_dots(self):
-        to_examine = [ 
-            DotType.RED,
-        ]
-        for dot_type in to_examine:
-            mask = self.red_mask 
+        for dot_type in self.to_examine:
             if dot_type == DotType.RED:
                 mask = self.red_mask                 
             elif dot_type == DotType.BLUE:
@@ -664,15 +688,16 @@ class FSMNavigator(Node):
             for c in contours:
                 area_detected = cv2.contourArea(c)
                 if area_detected > self.MIN_AREA:
-                    self.get_logger().info(f"Area : {area_detected}")
+                    if self.DEBUG:
+                        self.get_logger().info(f"Area : {area_detected}")
                     # if a dot is detected we keep track what dot color it 
                     # was and switch to a dot detected state as following a line
                     # is not our priority anymore 
                     self.dot_color_detected = dot_type
                     self.dot_detected = True
                     return True
+
             self.dot_detected = False
-            return False
 
     def detect_and_center(self,roi):
         # the image is processed according to the state we're in. changing from state to state 
@@ -842,6 +867,7 @@ class FSMNavigator(Node):
         # ================================================= #
         elif self.jetank_state == JetankState.IDLE:
             self.detect_and_center(roi)
+            self.try_detect_dots()
             self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
 
 
@@ -861,10 +887,11 @@ class FSMNavigator(Node):
 
         # publish the raw image with some anottations on it if any 
         # mostly for debugging purposes (can be removed but not recommended)
-        self.image_publisher.publish(
-            self.bridge.cv2_to_imgmsg(roi)
-        )
-
+        if self.SIMULATION:
+            img_msg = self.bridge.cv2_to_imgmsg(roi,encoding="rgb8")
+        else:
+            img_msg = self.bridge.cv2_to_imgmsg(roi)
+        self.image_publisher.publish(img_msg)
 
     # ---------------------- ------------------ ----------------- #
     # ---------------------- Callback functions ----------------- #
@@ -1050,7 +1077,7 @@ class FSMNavigator(Node):
         elif self.jetank_state == JetankState.DANGER:
             self.stop_moving()
             self.get_logger().warning(f"Object detected...")
-            self.map[self.next_position[1]][self.next_position[0]] = ZoneTypes.VOID
+            self.map[self.next_position[1]][self.next_position[0]] = ZoneTypes.VOID.value
             self.recalculating_route = True
             self.jetank_state = JetankState.INITIALIZE
             

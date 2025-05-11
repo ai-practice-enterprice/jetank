@@ -1,2 +1,0 @@
-string namespace
-string message

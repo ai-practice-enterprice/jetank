@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             "navigate = jetank_navigation.jetank_FSMNavigator_node:main",
+            "server = jetank_navigation.server_listener_node:main",
         ],
     },
 )
