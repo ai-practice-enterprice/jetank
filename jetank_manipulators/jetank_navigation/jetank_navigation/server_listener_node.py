@@ -4,7 +4,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import random
 import time
 
-from jetank_custom_msgs.msg._notification_server import NotificationServer
+from jetank_custom_msgs.msg import NotificationServer
 from std_msgs.msg import Int16 , Bool , Int16MultiArray , String
 from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist , Point
