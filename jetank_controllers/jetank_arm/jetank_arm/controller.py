@@ -53,6 +53,9 @@ class ServoController(Node):
     def callback1(self, msg: Bool):
         self.setAngle(4, 90 if msg.data else 40, 400)
 
+    def callback1(self, msg: Bool):
+        self.setAngle(4, 90 if msg.data else 0, 200)
+
     
     def setAngle(self, index: int, angle: float, speed: int):
         if not LAPTOP:
