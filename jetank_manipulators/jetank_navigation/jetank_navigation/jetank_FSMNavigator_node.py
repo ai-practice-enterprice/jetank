@@ -8,8 +8,10 @@ import random
 import heapq
 import time
 import copy
+import json
+import typing
 
-from jetank_custom_msgs.msg import NotificationServer
+# from jetank_custom_msgs.msg import NotificationServer
 from std_msgs.msg import Int16 , Bool , Int16MultiArray , String
 from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist , Point
@@ -95,8 +97,8 @@ class FSMNavigator(Node):
         self.bridge = CvBridge()
         self.cv_image = None
 
-        self.DEBUG = True
-        self.SIMULATION = True
+        self.DEBUG = False
+        self.SIMULATION = False
 
         # --------------------------- ----------- --------------------------- #
         # --------------------------- Robot state --------------------------- # 
@@ -161,13 +163,13 @@ class FSMNavigator(Node):
 
         if self.SIMULATION:
             # Linear velocity (linear.x in Twist) 
-            self.LIN_VEL = 0.45
+            self.LIN_VEL = 0.3
             # Angular velocity (angular.z in Twist)
             self.ANG_VEL = 2.0
             # Amount of time driving forwards (since dots are quite close it would be impossible that the Jetank drives more then +/- 10sec)
             self.DRIVE_FORWARD_THRESHOLD = 30.0
             # Amount of time between a observation (dot or line disappeared) and action (stop , move forwards, realign)
-            self.DEAD_RECKONING_THRESHOLD = 1.0
+            self.DEAD_RECKONING_THRESHOLD = 0.8
             # Minimum size for a contour to be considered anything
             self.MIN_AREA = 6000
 
@@ -231,12 +233,27 @@ class FSMNavigator(Node):
         # --------------------------- ------------------------------------- --------------------------- #
         # subscribers for the different robot params
         # e.g.: ros2 topic pub /jetank_1/goal_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
-        self.goal_pos_sub = self.create_subscription(
-            msg_type=Point,
-            topic='goal_position',
-            callback=self.listen_to_server_goal_position,
-            qos_profile=10
+        self.to_server_pub = self.create_publisher(
+            msg_type=String,
+            topic="/to_server",
+            qos_profile=10,
         )
+        # subscribers for the different robot params
+        # e.g.: ros2 topic pub /jetank_1/goal_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
+        if self.SIMULATION:
+            self.goal_pos_sub = self.create_subscription(
+                msg_type=Point,
+                topic='goal_position',
+                callback=self.listen_to_server_goal_position,
+                qos_profile=10
+            )
+        else:
+            self.goal_pos_sub = self.create_subscription(
+                msg_type=String,
+                topic='goal_position',
+                callback=self.listen_to_server_goal_position,
+                qos_profile=10
+            )
 
         # e.g.: ros2 topic pub /jetank_1/start_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
         self.start_pos_sub = self.create_subscription(
@@ -340,7 +357,7 @@ class FSMNavigator(Node):
 
         # --------------------------- ------------------------------------- --------------------------- #
         self.to_server_pub = self.create_publisher(
-            msg_type=NotificationServer,
+            msg_type=String,
             topic="/to_server",
             qos_profile=10,
         )
@@ -435,13 +452,21 @@ class FSMNavigator(Node):
     # ---------------------- Helper functions ----------------- #
     # ---------------------- ---------------- ----------------- #
 
-    def send_to_server(self,message : str,message_type: str = "info"):
-        self.get_logger().info(f"{self.get_namespace()} {message}")
+    def send_to_server(self,message : str,message_type: str):
         
-        msg = NotificationServer()
-        msg.robot_namespace = self.get_namespace()
-        msg.robot_message = f"{self.get_namespace()} {message}"
-        msg.message_type = message_type.upper()
+        msg = String() # NotificationServer()
+        # msg.robot_namespace = self.get_namespace()
+        # msg.robot_message = f"{self.get_namespace()} {message}"
+        # msg.message_type = message_type.upper()
+
+        msg.data = json.dumps({
+            "robot_namespace" : self.get_namespace(),
+            "robot_message" : self.get_namespace() + message,
+            "message_type" : message_type.upper(),            
+        })
+
+        self.get_logger().info(f"sending to server : {self.get_namespace()} \n\n {msg.data} \n\n")
+
         self.to_server_pub.publish(msg)
 
     def notify_server(self):
@@ -461,6 +486,7 @@ class FSMNavigator(Node):
                 self.jetank_state = JetankState.IDLE
 
         else:
+            self.send_to_server("Goal position is current position",message_type="Info")
             # we can add more logic in here to allow distress signals 
             # or a new map request or smt
             # or pictures (QR codes)
@@ -897,14 +923,27 @@ class FSMNavigator(Node):
     # ---------------------- Callback functions ----------------- #
     # ---------------------- ------------------ ----------------- #
 
-    def listen_to_server_goal_position(self,msg: Point):
-        # TODO => request from Zenoh topic instead which comes from the server  
-        self.goal_position = (int(msg.x),int(msg.y))      
-        self.get_logger().info(f"SERVER sending to {self.get_namespace()} goal position: {self.goal_position}")
-        if self.goal_position == self.current_position:
-            self.notify_server()
+    def listen_to_server_goal_position(self,msg: typing.Union[Point , String]):
+
+        if self.SIMULATION:
+            self.goal_position = (int(msg.x),int(msg.y))      
+            self.get_logger().info(f"SERVER sending to {self.get_namespace()} goal position: {self.goal_position}")
+            if self.goal_position == self.current_position:
+                self.notify_server()
+            else:
+                self.jetank_state = JetankState.INITIALIZE
         else:
-            self.jetank_state = JetankState.INITIALIZE
+            # TODO => request from Zenoh topic instead which comes from the server
+                        
+            msg_data_from_server = json.loads(msg.data)
+            self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
+
+            if self.get_namespace() == msg_data_from_server["robot_namespace"]:
+                self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
+
+                self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
+            else:
+                self.get_logger().warning(f"{self.get_namespace()} : THIS MESSAGE IS NOT FOR ME")
 
     def listen_to_server_start_position(self,msg: Point):
         self.start_position = (int(msg.x),int(msg.y))      

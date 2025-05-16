@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             "navigate = jetank_navigation.jetank_FSMNavigator_node:main",
             "server = jetank_navigation.server_listener_node:main",
+            "client = jetank_navigation.test_jetank_to_server:main",
         ],
     },
 )
