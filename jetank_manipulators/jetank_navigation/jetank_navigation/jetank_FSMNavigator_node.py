@@ -735,10 +735,10 @@ class FSMNavigator(Node):
         if self.jetank_state == JetankState.DOT_DETECTED:
             if self.dot_color_detected == DotType.RED:
                 contours, _ = cv2.findContours(self.red_mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-                contour_clr = (255,0,0)
+                contour_clr = (0,0,255)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
-                contour_clr = (0,0,255)
+                contour_clr = (255,0,0)
             else:
                 return False
             
