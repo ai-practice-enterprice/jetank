@@ -198,7 +198,8 @@ class FSMNavigator(Node):
         else:
             self.LIN_VEL = 0.6
             self.ANG_VEL = 4
-
+            self.DRIVE_FORWARD_THRESHOLD = 30.0
+            self.DEAD_RECKONING_THRESHOLD = 0.8
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
