@@ -929,6 +929,7 @@ class FSMNavigator(Node):
             self.goal_position = (int(msg.x),int(msg.y))      
             self.get_logger().info(f"SERVER sending to {self.get_namespace()} goal position: {self.goal_position}")
             if self.goal_position == self.current_position:
+                self.jetank_state = JetankState.IDLE
                 self.notify_server()
             else:
                 self.jetank_state = JetankState.INITIALIZE
@@ -940,8 +941,9 @@ class FSMNavigator(Node):
 
             if self.get_namespace() == msg_data_from_server["robot_namespace"]:
                 self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
-
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
+                self.jetank_state = JetankState.INITIALIZE
+
             else:
                 self.get_logger().warning(f"{self.get_namespace()} : THIS MESSAGE IS NOT FOR ME")
 
