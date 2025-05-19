@@ -107,6 +107,7 @@ class FSMNavigator(Node):
         self.start_position = (0,0) 
         self.current_position = copy.deepcopy(self.start_position)
         self.next_position = self.current_position
+        self.package_id = 0
         
         self.path_plan = []
         self.map = [
@@ -281,8 +282,8 @@ class FSMNavigator(Node):
         )
 
         self.map_sub = self.create_subscription(
-            msg_type=Int16MultiArray,
-            topic='map',
+            msg_type=String,
+            topic='/server/map',
             callback=self.listen_to_server_map,
             qos_profile=10
         )
@@ -462,8 +463,9 @@ class FSMNavigator(Node):
 
         msg.data = json.dumps({
             "robot_namespace" : self.get_namespace(),
-            "robot_message" : self.get_namespace() + message,
-            "message_type" : message_type.upper(),            
+            "robot_message" : self.get_namespace() + " " + message,
+            "message_type" : message_type.upper(),
+            "package_id": self.package_id,            
         })
 
         self.get_logger().info(f"sending to server : {self.get_namespace()} \n\n {msg.data} \n\n")
@@ -473,7 +475,7 @@ class FSMNavigator(Node):
     def notify_server(self):
         if self.jetank_state == JetankState.DESTINATION_REACHED:
             self.start_position = self.path[len(self.path) - 1] 
-            self.send_to_server("Arrived at destination",message_type="Info")
+            self.send_to_server("Arrived at destination",message_type="Confirmation")
 
             if self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.ZONE_IN.value:
                 self.jetank_state = JetankState.PICK_UP_PACKAGE
@@ -943,6 +945,8 @@ class FSMNavigator(Node):
             if self.get_namespace() == msg_data_from_server["robot_namespace"]:
                 self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
+                self.package_id = int(msg_data_from_server["package_id"])
+                
                 self.jetank_state = JetankState.INITIALIZE
 
             else:
@@ -987,9 +991,28 @@ class FSMNavigator(Node):
         elif danger == 0: 
             self.jetank_state = JetankState.DANGER
 
-    def listen_to_server_map(self,msg: Int16MultiArray):
-        message_layout = msg.layout
-        message_data = msg.data
+    def listen_to_server_map(self,msg: String):
+
+        msg_data_from_server = json.loads(msg.data)
+        self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
+
+        max_y = -1
+        max_x = -1
+        for zone in msg_data_from_server:
+            x , y = zone["coords"]
+            if max_y < y:
+                max_y = y
+            if max_x < x:
+                max_x = x
+
+        self.map = [
+            [0 for x in range(max_x + 1)]
+            for y in range(max_y + 1)
+        ]
+
+        for zone in msg_data_from_server:
+            x , y = zone["coords"]
+            self.map[y][x] = int(zone["zone_id"])
 
 
 
