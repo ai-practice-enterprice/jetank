@@ -1,8 +1,3 @@
-celerybeat*
-bsu_redis/*.rdb
-bsu_redis/appendonlydir
-*.log*
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
