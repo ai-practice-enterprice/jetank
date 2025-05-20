@@ -1,0 +1,3 @@
+string robot_namespace
+string robot_message
+string message_type
