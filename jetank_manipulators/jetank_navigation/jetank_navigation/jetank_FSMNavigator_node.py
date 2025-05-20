@@ -104,7 +104,8 @@ class FSMNavigator(Node):
         # --------------------------- Robot state --------------------------- # 
         # --------------------------- ----------- --------------------------- #
         self.goal_position = (0,0)
-        self.start_position = (0,0) 
+        self.start_position = (0,0)
+        self.goal_storage_position = (0,0) 
         self.current_position = copy.deepcopy(self.start_position)
         self.next_position = self.current_position
         self.package_id = 0
@@ -222,6 +223,28 @@ class FSMNavigator(Node):
         # --------------------------- subscriptions , publishers and timers --------------------------- # 
         # --------------------------- ------------------------------------- --------------------------- #
 
+        # current subscriptions:
+        # ----------------------
+        # /<ns>/camera/image_raw/compressed
+        # /<ns>/goal_position
+        # /<ns>/start_position
+        # /<ns>/FSM_state
+        # /<ns>/direction
+        # /server/reset
+        # /server/map
+         
+        # current publishers:
+        # -------------------
+        # /to_server
+        # /<ns>/detection_result
+        # /<ns>/ik_input
+        # /<ns>/arm_gripper
+        # /<ns>/cmd_vel
+        
+        # if DEBUG
+        # /<ns>/detection/result/red_mask
+        # /<ns>/detection/result/green_mask
+        # /<ns>/detection/result/blue_mask
 
         # --------------------------- ------------------------------------- --------------------------- #
         # subscribeer to the camera feed 
@@ -254,6 +277,12 @@ class FSMNavigator(Node):
                 msg_type=String,
                 topic='goal_position',
                 callback=self.listen_to_server_goal_position,
+                qos_profile=10
+            )
+            self.goal_pos_sub = self.create_subscription(
+                msg_type=String,
+                topic='/server/reset',
+                callback=self.listen_to_server_reset,
                 qos_profile=10
             )
 
@@ -358,14 +387,6 @@ class FSMNavigator(Node):
             )
 
         # --------------------------- ------------------------------------- --------------------------- #
-        self.to_server_pub = self.create_publisher(
-            msg_type=String,
-            topic="/to_server",
-            qos_profile=10,
-        )
-
-
-        # --------------------------- ------------------------------------- --------------------------- #
         self.main_loop = self.create_timer(
             timer_period_sec=self.TIMER_PERIOD,
             callback=self.FSMloop
@@ -379,6 +400,9 @@ class FSMNavigator(Node):
         self.get_logger().info(f"start position: {self.start_position}")
         self.get_logger().info(f"current position: {self.current_position}")
         self.get_logger().info(f"direction : {self.direction}")
+        self.get_logger().info(f"Notifying server that i am available")
+        self.notify_server()
+
         self.get_logger().info(f"--- booting up complete ---")
 
     # ---------------------- ------------------ ----------------- #
@@ -456,16 +480,24 @@ class FSMNavigator(Node):
 
     def send_to_server(self,message : str,message_type: str):
         
-        msg = String() # NotificationServer()
-        # msg.robot_namespace = self.get_namespace()
-        # msg.robot_message = f"{self.get_namespace()} {message}"
-        # msg.message_type = message_type.upper()
+        msg = String() 
 
+        if message_type.upper() == "REQUEST":
+            status = False
+        elif message_type.upper() == "CONFIRMATION":
+            status = True
+        elif message_type.upper() == "INFO":
+            status = False
+        elif message_type.upper() == "WARNING":
+            status = False
+
+        
         msg.data = json.dumps({
             "robot_namespace" : self.get_namespace(),
             "robot_message" : self.get_namespace() + " " + message,
             "message_type" : message_type.upper(),
-            "package_id": self.package_id,            
+            "package_id": self.package_id,
+            "status" : status,            
         })
 
         self.get_logger().info(f"sending to server : {self.get_namespace()} \n\n {msg.data} \n\n")
@@ -475,19 +507,35 @@ class FSMNavigator(Node):
     def notify_server(self):
         if self.jetank_state == JetankState.DESTINATION_REACHED:
             self.start_position = self.path[len(self.path) - 1] 
-            self.send_to_server("Arrived at destination",message_type="Confirmation")
 
             if self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.ZONE_IN.value:
                 self.jetank_state = JetankState.PICK_UP_PACKAGE
-                self.send_to_server("Picking up package",message_type="Info")
+                
+                self.send_to_server(f"""
+                {self.get_namespace()} Picking up package in zone: {self.current_position}
+                Moving to {self.goal_storage_position}
+                """,
+                message_type="Info")
                 
             elif self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.STORAGE.value:
                 self.jetank_state = JetankState.PUT_DOWN_PACKAGE
-                self.send_to_server("Putting down package",message_type="Info")
+                
+                self.send_to_server(f"""
+                {self.get_namespace()} Arrived at destination: {self.current_position}
+                
+                """,
+                message_type="Confirmation")
+
             
             else: 
                 self.jetank_state = JetankState.IDLE
 
+        elif self.jetank_state == JetankState.IDLE:
+            self.send_to_server(f"{self.get_namespace()} available",message_type="Confirmation")
+
+        elif self.jetank_state == JetankState.DANGER:
+            self.send_to_server(f"{self.get_namespace()} danger detected",message_type="Warning")
+            
         else:
             self.send_to_server("Goal position is current position",message_type="Info")
             # we can add more logic in here to allow distress signals 
@@ -506,6 +554,7 @@ class FSMNavigator(Node):
                 self.current_position = self.path[current_index + 1]
 
                 if self.current_position == self.goal_position: 
+                    self.goal_position = self.goal_storage_position
                     self.jetank_state = JetankState.DESTINATION_REACHED
                 else:
                     self.next_position = self.path[current_index + 2]
@@ -946,7 +995,8 @@ class FSMNavigator(Node):
                 self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
                 self.package_id = int(msg_data_from_server["package_id"])
-                
+                self.goal_storage_position = (int(msg_data_from_server["final_x"]),int(msg_data_from_server["final_y"]))
+
                 self.jetank_state = JetankState.INITIALIZE
 
             else:
@@ -1014,7 +1064,24 @@ class FSMNavigator(Node):
             x , y = zone["coords"]
             self.map[y][x] = int(zone["zone_id"])
 
+    def listen_to_server_reset(self,msg: String):
+        msg_data_from_server = json.loads(msg.data)
+        self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
+        
+        if self.get_namespace() == msg_data_from_server["robot_namespace"]:
+            self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
+            
+            if msg_data_from_server["reset"]:
+                self.jetank_state == JetankState.INITIALIZE
 
+            if msg_data_from_server["direction"]:
+                pass
+            if msg_data_from_server["start_position"]:
+                pass
+            if msg_data_from_server["current_position"]:
+                pass
+            if msg_data_from_server["state"]:
+                pass
 
     def read_image_callback(self, msg: CompressedImage):
         try:
@@ -1142,11 +1209,13 @@ class FSMNavigator(Node):
         elif self.jetank_state == JetankState.DANGER:
             self.stop_moving()
             self.get_logger().warning(f"Object detected...")
+            self.notify_server()
             self.map[self.next_position[1]][self.next_position[0]] = ZoneTypes.VOID.value
             self.recalculating_route = True
             self.jetank_state = JetankState.INITIALIZE
             
-         
+    def send_before_dead(self):
+        self.send_to_server("shutting down...power off","REQUEST")
 
 
 def main(args=None):
@@ -1157,6 +1226,7 @@ def main(args=None):
     except KeyboardInterrupt:
         navigator_node.stop_moving()
 
+    navigator_node.send_before_dead()
     navigator_node.stop_moving()
     navigator_node.destroy_node()
     rclpy.shutdown()
