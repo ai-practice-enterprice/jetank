@@ -1,6 +1,8 @@
 LAPTOP = False
 
 import rclpy
+import time
+import math
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from rcl_interfaces.msg import SetParametersResult
@@ -25,9 +27,31 @@ class ServoController(Node):
 
     def callback(self, msg):
 
-        self.setAngle(2, msg.angular.x - 90, 300)   # Set arm 1 into position
-        self.setAngle(3, msg.angular.y - 90, 300)   # Set arm 2 into position
-        self.setAngle(1, msg.angular.z, 300)        # Set base into position
+        if(msg.angular.x == 0 and msg.angular.y == 0 and msg.angular.z == 0):
+            self.SetDefault()
+            return
+
+        distance = math.sqrt(math.sqrt(msg.linear.x**2 + msg.linear.y**2)**2 + msg.linear.z**2)
+
+        if(0 < distance <= 0.13):
+            self.setAngle(5, -40, 300)
+
+        time.sleep(0.2)
+
+        self.setAngle(2, msg.angular.x - 90, 400)   # Set arm 1 into position
+        self.setAngle(3, msg.angular.y - 90, 400)   # Set arm 2 into position
+        self.setAngle(1, msg.angular.z, 400)        # Set base into position
+
+        time.sleep(0.2)
+
+        if(0 < distance > 0.13):
+            self.setAngle(5, -10, 400)
+
+        if(distance == 0):
+            self.setAngle(5, -30, 400)
+
+    def callback1(self, msg: Bool):
+        self.setAngle(4, 90 if msg.data else 40, 400)
 
     def callback1(self, msg: Bool):
         self.setAngle(4, 90 if msg.data else 0, 200)

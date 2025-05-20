@@ -72,14 +72,6 @@ class ik_solver(Node):
         self.pub.publish(msg)                                                   # Publish message
             # self.get_logger().info(f'Output published')                             # Debug
 
-        self.get_logger().info(f"Output: \n\
-                               \t{msg.linear.x} \n\
-                               \t{msg.linear.y} \n\
-                               \t{msg.linear.z} \n\
-                               \t{msg.angular.x} \n\
-                               \t{msg.angular.y} \n\
-                               \t{msg.angular.z} \n")
-
     def is_in_range(self, p: Target):
         """
             This function checks if a given target in space can be reached using this arm.
@@ -88,8 +80,6 @@ class ik_solver(Node):
         """
         max_distance = arm1_length + arm2_length                # Maximum length is two arms spread
         min_distance = max(0.08, arm1_length - arm2_length)     # Minimum lenght is arms closed, but with a minimal distance of
-
-        self.get_logger().info(f'{p.d}')
 
         if p.d <= min_distance:                                         # If distance is shorter than minimum
             self.get_logger().info(f"Distance too short to reach")      # Print warning

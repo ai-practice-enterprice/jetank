@@ -104,9 +104,11 @@ class FSMNavigator(Node):
         # --------------------------- Robot state --------------------------- # 
         # --------------------------- ----------- --------------------------- #
         self.goal_position = (0,0)
-        self.start_position = (0,0) 
+        self.start_position = (0,0)
+        self.goal_storage_position = (0,0) 
         self.current_position = copy.deepcopy(self.start_position)
         self.next_position = self.current_position
+        self.package_id = 0
         
         self.path_plan = []
         self.map = [
@@ -198,7 +200,8 @@ class FSMNavigator(Node):
         else:
             self.LIN_VEL = 0.6
             self.ANG_VEL = 4
-
+            self.DRIVE_FORWARD_THRESHOLD = 30.0
+            self.DEAD_RECKONING_THRESHOLD = 0.8
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
@@ -220,6 +223,28 @@ class FSMNavigator(Node):
         # --------------------------- subscriptions , publishers and timers --------------------------- # 
         # --------------------------- ------------------------------------- --------------------------- #
 
+        # current subscriptions:
+        # ----------------------
+        # /<ns>/camera/image_raw/compressed
+        # /<ns>/goal_position
+        # /<ns>/start_position
+        # /<ns>/FSM_state
+        # /<ns>/direction
+        # /server/reset
+        # /server/map
+         
+        # current publishers:
+        # -------------------
+        # /to_server
+        # /<ns>/detection_result
+        # /<ns>/ik_input
+        # /<ns>/arm_gripper
+        # /<ns>/cmd_vel
+        
+        # if DEBUG
+        # /<ns>/detection/result/red_mask
+        # /<ns>/detection/result/green_mask
+        # /<ns>/detection/result/blue_mask
 
         # --------------------------- ------------------------------------- --------------------------- #
         # subscribeer to the camera feed 
@@ -254,6 +279,12 @@ class FSMNavigator(Node):
                 callback=self.listen_to_server_goal_position,
                 qos_profile=10
             )
+            self.goal_pos_sub = self.create_subscription(
+                msg_type=String,
+                topic='/server/reset',
+                callback=self.listen_to_server_reset,
+                qos_profile=10
+            )
 
         # e.g.: ros2 topic pub /jetank_1/start_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
         self.start_pos_sub = self.create_subscription(
@@ -280,8 +311,8 @@ class FSMNavigator(Node):
         )
 
         self.map_sub = self.create_subscription(
-            msg_type=Int16MultiArray,
-            topic='map',
+            msg_type=String,
+            topic='/server/map',
             callback=self.listen_to_server_map,
             qos_profile=10
         )
@@ -356,14 +387,6 @@ class FSMNavigator(Node):
             )
 
         # --------------------------- ------------------------------------- --------------------------- #
-        self.to_server_pub = self.create_publisher(
-            msg_type=String,
-            topic="/to_server",
-            qos_profile=10,
-        )
-
-
-        # --------------------------- ------------------------------------- --------------------------- #
         self.main_loop = self.create_timer(
             timer_period_sec=self.TIMER_PERIOD,
             callback=self.FSMloop
@@ -377,6 +400,9 @@ class FSMNavigator(Node):
         self.get_logger().info(f"start position: {self.start_position}")
         self.get_logger().info(f"current position: {self.current_position}")
         self.get_logger().info(f"direction : {self.direction}")
+        self.get_logger().info(f"Notifying server that i am available")
+        self.notify_server()
+
         self.get_logger().info(f"--- booting up complete ---")
 
     # ---------------------- ------------------ ----------------- #
@@ -454,15 +480,24 @@ class FSMNavigator(Node):
 
     def send_to_server(self,message : str,message_type: str):
         
-        msg = String() # NotificationServer()
-        # msg.robot_namespace = self.get_namespace()
-        # msg.robot_message = f"{self.get_namespace()} {message}"
-        # msg.message_type = message_type.upper()
+        msg = String() 
 
+        if message_type.upper() == "REQUEST":
+            status = False
+        elif message_type.upper() == "CONFIRMATION":
+            status = True
+        elif message_type.upper() == "INFO":
+            status = False
+        elif message_type.upper() == "WARNING":
+            status = False
+
+        
         msg.data = json.dumps({
             "robot_namespace" : self.get_namespace(),
-            "robot_message" : self.get_namespace() + message,
-            "message_type" : message_type.upper(),            
+            "robot_message" : self.get_namespace() + " " + message,
+            "message_type" : message_type.upper(),
+            "package_id": self.package_id,
+            "status" : status,            
         })
 
         self.get_logger().info(f"sending to server : {self.get_namespace()} \n\n {msg.data} \n\n")
@@ -472,19 +507,35 @@ class FSMNavigator(Node):
     def notify_server(self):
         if self.jetank_state == JetankState.DESTINATION_REACHED:
             self.start_position = self.path[len(self.path) - 1] 
-            self.send_to_server("Arrived at destination",message_type="Info")
 
             if self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.ZONE_IN.value:
                 self.jetank_state = JetankState.PICK_UP_PACKAGE
-                self.send_to_server("Picking up package",message_type="Info")
+                
+                self.send_to_server(f"""
+                {self.get_namespace()} Picking up package in zone: {self.current_position}
+                Moving to {self.goal_storage_position}
+                """,
+                message_type="Info")
                 
             elif self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.STORAGE.value:
                 self.jetank_state = JetankState.PUT_DOWN_PACKAGE
-                self.send_to_server("Putting down package",message_type="Info")
+                
+                self.send_to_server(f"""
+                {self.get_namespace()} Arrived at destination: {self.current_position}
+                
+                """,
+                message_type="Confirmation")
+
             
             else: 
                 self.jetank_state = JetankState.IDLE
 
+        elif self.jetank_state == JetankState.IDLE:
+            self.send_to_server(f"{self.get_namespace()} available",message_type="Confirmation")
+
+        elif self.jetank_state == JetankState.DANGER:
+            self.send_to_server(f"{self.get_namespace()} danger detected",message_type="Warning")
+            
         else:
             self.send_to_server("Goal position is current position",message_type="Info")
             # we can add more logic in here to allow distress signals 
@@ -503,6 +554,7 @@ class FSMNavigator(Node):
                 self.current_position = self.path[current_index + 1]
 
                 if self.current_position == self.goal_position: 
+                    self.goal_position = self.goal_storage_position
                     self.jetank_state = JetankState.DESTINATION_REACHED
                 else:
                     self.next_position = self.path[current_index + 2]
@@ -735,16 +787,16 @@ class FSMNavigator(Node):
         if self.jetank_state == JetankState.DOT_DETECTED:
             if self.dot_color_detected == DotType.RED:
                 contours, _ = cv2.findContours(self.red_mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-                contour_clr = (0,0,255)
+                contour_clr = (0,255,255)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
-                contour_clr = (255,0,0)
+                contour_clr = (255,255,255)
             else:
                 return False
             
         elif self.jetank_state == JetankState.FOLLOW_LINE or self.jetank_state == JetankState.IDLE:
             contours, _ = cv2.findContours(self.green_mask,1, cv2.CHAIN_APPROX_NONE)
-            contour_clr = (0,255,0)
+            contour_clr = (0,0,0)
 
         else:
             return False
@@ -929,6 +981,7 @@ class FSMNavigator(Node):
             self.goal_position = (int(msg.x),int(msg.y))      
             self.get_logger().info(f"SERVER sending to {self.get_namespace()} goal position: {self.goal_position}")
             if self.goal_position == self.current_position:
+                self.jetank_state = JetankState.IDLE
                 self.notify_server()
             else:
                 self.jetank_state = JetankState.INITIALIZE
@@ -940,8 +993,12 @@ class FSMNavigator(Node):
 
             if self.get_namespace() == msg_data_from_server["robot_namespace"]:
                 self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
-
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
+                self.package_id = int(msg_data_from_server["package_id"])
+                self.goal_storage_position = (int(msg_data_from_server["final_x"]),int(msg_data_from_server["final_y"]))
+
+                self.jetank_state = JetankState.INITIALIZE
+
             else:
                 self.get_logger().warning(f"{self.get_namespace()} : THIS MESSAGE IS NOT FOR ME")
 
@@ -984,11 +1041,47 @@ class FSMNavigator(Node):
         elif danger == 0: 
             self.jetank_state = JetankState.DANGER
 
-    def listen_to_server_map(self,msg: Int16MultiArray):
-        message_layout = msg.layout
-        message_data = msg.data
+    def listen_to_server_map(self,msg: String):
 
+        msg_data_from_server = json.loads(msg.data)
+        self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
 
+        max_y = -1
+        max_x = -1
+        for zone in msg_data_from_server:
+            x , y = zone["coords"]
+            if max_y < y:
+                max_y = y
+            if max_x < x:
+                max_x = x
+
+        self.map = [
+            [0 for x in range(max_x + 1)]
+            for y in range(max_y + 1)
+        ]
+
+        for zone in msg_data_from_server:
+            x , y = zone["coords"]
+            self.map[y][x] = int(zone["zone_id"])
+
+    def listen_to_server_reset(self,msg: String):
+        msg_data_from_server = json.loads(msg.data)
+        self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
+        
+        if self.get_namespace() == msg_data_from_server["robot_namespace"]:
+            self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
+            
+            if msg_data_from_server["reset"]:
+                self.jetank_state == JetankState.INITIALIZE
+
+            if msg_data_from_server["direction"]:
+                pass
+            if msg_data_from_server["start_position"]:
+                pass
+            if msg_data_from_server["current_position"]:
+                pass
+            if msg_data_from_server["state"]:
+                pass
 
     def read_image_callback(self, msg: CompressedImage):
         try:
@@ -1116,11 +1209,13 @@ class FSMNavigator(Node):
         elif self.jetank_state == JetankState.DANGER:
             self.stop_moving()
             self.get_logger().warning(f"Object detected...")
+            self.notify_server()
             self.map[self.next_position[1]][self.next_position[0]] = ZoneTypes.VOID.value
             self.recalculating_route = True
             self.jetank_state = JetankState.INITIALIZE
             
-         
+    def send_before_dead(self):
+        self.send_to_server("shutting down...power off","REQUEST")
 
 
 def main(args=None):
@@ -1131,6 +1226,7 @@ def main(args=None):
     except KeyboardInterrupt:
         navigator_node.stop_moving()
 
+    navigator_node.send_before_dead()
     navigator_node.stop_moving()
     navigator_node.destroy_node()
     rclpy.shutdown()
