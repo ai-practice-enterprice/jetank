@@ -516,6 +516,7 @@ class FSMNavigator(Node):
                 Moving to {self.goal_storage_position}
                 """,
                 message_type="Info")
+                self.goal_position = self.goal_storage_position
                 
             elif self.map[self.goal_position[1]][self.goal_position[0]] == ZoneTypes.STORAGE.value:
                 self.jetank_state = JetankState.PUT_DOWN_PACKAGE
@@ -554,7 +555,6 @@ class FSMNavigator(Node):
                 self.current_position = self.path[current_index + 1]
 
                 if self.current_position == self.goal_position: 
-                    self.goal_position = self.goal_storage_position
                     self.jetank_state = JetankState.DESTINATION_REACHED
                 else:
                     self.next_position = self.path[current_index + 2]
