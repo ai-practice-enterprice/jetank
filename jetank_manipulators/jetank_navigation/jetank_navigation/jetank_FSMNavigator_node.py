@@ -137,9 +137,9 @@ class FSMNavigator(Node):
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
-        self.MAX_ERROR = 30
+        self.MAX_ERROR = 25
         # The maximum error value for which the robot is aligned when turning
-        self.MAX_ALIGNMENT_ERROR = 50
+        self.MAX_ALIGNMENT_ERROR = 40
 
         self.error = 0
         self.prev_error = None
@@ -203,7 +203,7 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.6
             self.ANG_VEL = 4
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 0.8
+            self.DEAD_RECKONING_THRESHOLD = 0.9
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
@@ -403,7 +403,7 @@ class FSMNavigator(Node):
         self.get_logger().info(f"current position: {self.current_position}")
         self.get_logger().info(f"direction : {self.direction}")
         self.get_logger().info(f"Notifying server that i am available")
-        self.notify_server()
+        self.send_to_server("I am available",message_type="REQUEST",status=True)
 
         self.get_logger().info(f"--- booting up complete ---")
 
@@ -475,18 +475,18 @@ class FSMNavigator(Node):
     # ---------------------- Helper functions ----------------- #
     # ---------------------- ---------------- ----------------- #
 
-    def send_to_server(self,message : str,message_type: str):
+    def send_to_server(self,message : str,message_type: str,status: bool =  None):
         
         msg = String() 
-
-        if message_type.upper() == "REQUEST":
-            status = False
-        elif message_type.upper() == "CONFIRMATION":
-            status = True
-        elif message_type.upper() == "INFO":
-            status = False
-        elif message_type.upper() == "WARNING":
-            status = False
+        if status is None:
+            if message_type.upper() == "REQUEST":
+                status = False
+            elif message_type.upper() == "CONFIRMATION":
+                status = True
+            elif message_type.upper() == "INFO":
+                status = False
+            elif message_type.upper() == "WARNING":
+                status = False
 
         
         msg.data = json.dumps({
@@ -529,10 +529,10 @@ class FSMNavigator(Node):
                 self.jetank_state = JetankState.IDLE
 
         elif self.jetank_state == JetankState.IDLE:
-            self.send_to_server(f"{self.get_namespace()} available",message_type="Confirmation")
+            self.send_to_server(f"available",message_type="Request",status=True)
 
         elif self.jetank_state == JetankState.DANGER:
-            self.send_to_server(f"{self.get_namespace()} danger detected",message_type="Warning")
+            self.send_to_server(f"{self.get_namespace()} danger detected",message_type="Warning",status=False)
             
         else:
             self.send_to_server("Goal position is current position",message_type="Info")
