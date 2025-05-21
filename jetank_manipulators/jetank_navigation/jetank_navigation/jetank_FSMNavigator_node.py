@@ -141,7 +141,7 @@ class FSMNavigator(Node):
         # The maximum error value for which the robot is still in a straight line
         self.MAX_ERROR = 25
         # The maximum error value for which the robot is aligned when turning
-        self.MAX_ALIGNMENT_ERROR = 40
+        self.MAX_ALIGNMENT_ERROR = 45
 
         self.error = 0
         self.prev_error = None
@@ -205,7 +205,7 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.6
             self.ANG_VEL = 4
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 0.9
+            self.DEAD_RECKONING_THRESHOLD = 0.85
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
