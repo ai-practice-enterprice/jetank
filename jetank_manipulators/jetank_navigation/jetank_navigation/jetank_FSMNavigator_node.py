@@ -133,6 +133,8 @@ class FSMNavigator(Node):
         self.dot_disseappered_at_time = 0.0
         self.last_dot_time_since_FOLLOW_LINE_state = 0.0
 
+        self.timer_between_arm_mov = 3
+
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
         self.MAX_ERROR = 30
@@ -1121,6 +1123,17 @@ class FSMNavigator(Node):
         if self.prev_jetank_state != JetankState.IDLE and self.jetank_state == JetankState.IDLE:
             self.stop_moving()
 
+        if self.prev_jetank_state == JetankState.PICK_UP_PACKAGE and self.jetank_state == JetankState.PICK_UP_PACKAGE:
+            self.is_arm_published = False
+            self.publish_arm_ik(points="rest_pos")
+            self.jetank_state == JetankState.INITIALIZE
+
+        if self.prev_jetank_state == JetankState.PUT_DOWN_PACKAGE and self.jetank_state == JetankState.PUT_DOWN_PACKAGE:
+            self.is_arm_published = False
+            self.publish_arm_ik(points="rest_pos")
+            self.jetank_state == JetankState.IDLE
+            
+
         # ----------- state logger ----------- #
         if self.prev_jetank_state is not self.jetank_state:
             self.is_arm_published = False
@@ -1185,21 +1198,19 @@ class FSMNavigator(Node):
         # https://pyimagesearch.com/2020/12/21/detecting-aruco-markers-with-opencv-and-python/
         elif self.jetank_state == JetankState.PICK_UP_PACKAGE:
             self.publish_gripper(open=True)
-            time.sleep(4)
+            time.sleep(self.timer_between_arm_mov)
             self.publish_arm_ik(points="pickup")
-            time.sleep(4)
+            time.sleep(self.timer_between_arm_mov)
             self.publish_gripper(open=False)
-            time.sleep(4)
-            self.jetank_state = JetankState.INITIALIZE
+            time.sleep(self.timer_between_arm_mov)
 
 
         # ================================================= #
         elif self.jetank_state == JetankState.PUT_DOWN_PACKAGE:
             self.publish_arm_ik(points="putdown")
-            time.sleep(4)
+            time.sleep(self.timer_between_arm_mov)
             self.publish_gripper(open=True)
-            time.sleep(4)
-            self.jetank_state = JetankState.IDLE
+            time.sleep(self.timer_between_arm_mov)
 
         # ================================================= #
         elif self.jetank_state == JetankState.DANGER:
