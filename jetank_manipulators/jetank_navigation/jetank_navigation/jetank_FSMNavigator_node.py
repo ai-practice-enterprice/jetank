@@ -205,7 +205,7 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.5
             self.ANG_VEL = 3.5
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 1.1
+            self.DEAD_RECKONING_THRESHOLD = 1.0
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
@@ -432,7 +432,7 @@ class FSMNavigator(Node):
             proportion = 1
 
         self.current_lin_vel = proportion * self.LIN_VEL
-        self.current_ang_vel = self.KP * self.error
+        self.current_ang_vel = self.KP * self.error * proportion
 
     def publish_cmd_vel(self):
         msg = Twist()
