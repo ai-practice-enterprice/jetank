@@ -1194,7 +1194,7 @@ class FSMNavigator(Node):
             time.sleep(4)
             self.publish_gripper(open=False)
             time.sleep(4)
-            self.jetank_state = JetankState.IDLE
+            self.jetank_state = JetankState.INITIALIZE
 
 
         # ================================================= #
