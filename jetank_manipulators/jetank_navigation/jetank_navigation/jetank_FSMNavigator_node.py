@@ -134,6 +134,8 @@ class FSMNavigator(Node):
         self.last_dot_time_since_FOLLOW_LINE_state = 0.0
 
         self.timer_between_arm_mov = 3
+        self.timer_between_broadcast_available_status = 20
+        self.available_status_last_broadcast = time.perf_counter()
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
@@ -402,8 +404,6 @@ class FSMNavigator(Node):
         self.get_logger().info(f"start position: {self.start_position}")
         self.get_logger().info(f"current position: {self.current_position}")
         self.get_logger().info(f"direction : {self.direction}")
-        self.get_logger().info(f"Notifying server that i am available")
-        self.send_to_server("I am available",message_type="REQUEST",status=True)
 
         self.get_logger().info(f"--- booting up complete ---")
 
@@ -1193,6 +1193,12 @@ class FSMNavigator(Node):
         # ================================================= #
         elif self.jetank_state == JetankState.IDLE:
             self.publish_arm_ik(points="rest_pos")
+
+            if time.perf_counter() - self.available_status_last_broadcast >= self.timer_between_broadcast_available_status:
+                self.available_status_last_broadcast = time.perf_counter()
+                self.get_logger().info(f"Notifying server that i am available")
+                self.send_to_server("I am available",message_type="REQUEST",status=True)
+
 
         # ================================================= #
         # https://pyimagesearch.com/2020/12/21/detecting-aruco-markers-with-opencv-and-python/
