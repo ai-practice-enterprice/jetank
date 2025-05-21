@@ -447,17 +447,12 @@ class FSMNavigator(Node):
             self.is_arm_published = True    
             msg = Twist()
 
-            if points == "pickup": 
-                msg.linear.x = 0.12
-                msg.linear.y = 0.04
-                msg.linear.z = 0.20
-
-            elif points == "rest_pos":
+            if points == "rest_pos":
                 msg.linear.x = 0.0
                 msg.linear.y = 0.0
                 msg.linear.z = 0.0
 
-            elif points == "putdown":
+            elif points == "putdown" or points == "pickup":
                 msg.linear.x = 0.14
                 msg.linear.y = 0.0
                 msg.linear.z = -0.14
@@ -909,6 +904,7 @@ class FSMNavigator(Node):
             if  time_diff > self.DRIVE_FORWARD_THRESHOLD:
                 self.jetank_state = JetankState.IDLE
                 self.get_logger().info("Timer exceeded. Switching to IDLE.")
+                self.send_to_server("No dot detected","WARNING")
                 self.last_dot_time_since_FOLLOW_LINE_state = time.perf_counter()
 
             # self.get_logger().info(f"{self.dot_detected} && {self.dead_reckoning_active}")
