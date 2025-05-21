@@ -1126,12 +1126,12 @@ class FSMNavigator(Node):
         if self.prev_jetank_state == JetankState.PICK_UP_PACKAGE and self.jetank_state == JetankState.PICK_UP_PACKAGE:
             self.is_arm_published = False
             self.publish_arm_ik(points="rest_pos")
-            self.jetank_state == JetankState.INITIALIZE
+            self.jetank_state = JetankState.INITIALIZE
 
         if self.prev_jetank_state == JetankState.PUT_DOWN_PACKAGE and self.jetank_state == JetankState.PUT_DOWN_PACKAGE:
             self.is_arm_published = False
             self.publish_arm_ik(points="rest_pos")
-            self.jetank_state == JetankState.IDLE
+            self.jetank_state = JetankState.IDLE
             
 
         # ----------- state logger ----------- #
