@@ -475,10 +475,10 @@ class FSMNavigator(Node):
     # ---------------------- Helper functions ----------------- #
     # ---------------------- ---------------- ----------------- #
 
-    def send_to_server(self,message : str,message_type: str,status: bool =  None):
+    def send_to_server(self,message : str,message_type: str,status =  -1):
         
         msg = String() 
-        if status is None:
+        if status == -1:
             if message_type.upper() == "REQUEST":
                 status = False
             elif message_type.upper() == "CONFIRMATION":
