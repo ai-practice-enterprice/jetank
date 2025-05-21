@@ -202,8 +202,8 @@ class FSMNavigator(Node):
             self.lower_red2 = np.array([170, 125, 125])
             self.upper_red2 = np.array([179, 255, 255])
         else:
-            self.LIN_VEL = 0.6
-            self.ANG_VEL = 4
+            self.LIN_VEL = 0.5
+            self.ANG_VEL = 3.5
             self.DRIVE_FORWARD_THRESHOLD = 30.0
             self.DEAD_RECKONING_THRESHOLD = 0.85
             self.MIN_AREA = 6000
