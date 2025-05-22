@@ -156,7 +156,7 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 1.2 / 100 
+        self.KP = 1.5 / 100 
         # self.KI = 0.01 / 100 
         # self.KD = 0.2 / 100 
         # self.KS = 10
@@ -198,12 +198,12 @@ class FSMNavigator(Node):
             self.lower_green = np.array([30, 50, 50])
             self.upper_green = np.array([60, 255, 255])
     
-            self.lower_blue = np.array([70, 125, 125])
+            self.lower_blue = np.array([70, 120, 120])
             self.upper_blue = np.array([120, 255, 255])
     
-            self.lower_red1 = np.array([0, 125, 125])
+            self.lower_red1 = np.array([0, 120, 120])
             self.upper_red1 = np.array([15, 255, 255])
-            self.lower_red2 = np.array([170, 125, 125])
+            self.lower_red2 = np.array([170, 120, 120])
             self.upper_red2 = np.array([179, 255, 255])
         else:
             self.LIN_VEL = 0.6
@@ -438,7 +438,7 @@ class FSMNavigator(Node):
 
         self.current_lin_vel = proportion * self.LIN_VEL
         # Use angle_error to adjust angular velocity
-        self.current_ang_vel = self.KP * self.angle_error
+        self.current_ang_vel = self.KP * self.error
 
 
     def publish_cmd_vel(self):
@@ -802,7 +802,6 @@ class FSMNavigator(Node):
         if self.jetank_state == JetankState.DOT_DETECTED:
             if self.dot_color_detected == DotType.RED:
                 contours, _ = cv2.findContours(self.red_mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-                edges = cv2.Canny(self.red_mask, 50, 150, apertureSize=3)
                 contour_clr = (0,255,255)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
@@ -839,34 +838,7 @@ class FSMNavigator(Node):
             if smoothed_cx < image_center_x - self.MAX_ERROR or image_center_x + self.MAX_ERROR < smoothed_cx:
                 self.error = image_center_x - smoothed_cx
 
-            # Apply edge detection method on the image
-            if self.jetank_state == JetankState.DOT_DETECTED:
-                edges = cv2.Canny(self.red_mask, 50, 150, apertureSize=3)
-            elif self.jetank_state == JetankState.FOLLOW_LINE or self.jetank_state == JetankState.IDLE:
-                edges = cv2.Canny(self.green_mask, 50, 150, apertureSize=3)
-
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
-            angle_deg = None
-            # Calculate the angle of the detected line (if any)
-            if lines is not None and len(lines) > 0:
-                # Take the longest line for better stability
-                longest_line = max(lines, key=lambda l: np.linalg.norm([l[0][2] - l[0][0], l[0][3] - l[0][1]]))
-                x1, y1, x2, y2 = longest_line[0]
-                dx = x2 - x1
-                dy = y2 - y1
-                angle_rad = np.arctan2(dy, dx)
-                angle_deg = np.degrees(angle_rad)
-                # Draw the selected line in a different color for visualization
-                cv2.line(roi, (x1, y1), (x2, y2), (255, 0, 0), 3)
-
-                # Use the angle to adjust robot steering
-                # 0 degrees = horizontal, 90/-90 = vertical
-                # For line following, you may want to keep the robot perpendicular to the line
-                # Calculate error from desired angle (e.g., 90 degrees for vertical line)
-                desired_angle = 90  # adjust as needed for your setup
-                self.angle_error = desired_angle - abs(angle_deg)
-            
-
+           
             # annotations
             cv2.circle(roi,(smoothed_cx,smoothed_cy),5,contour_clr,2)
             cv2.drawContours(roi, [cnt], -1, contour_clr, 1)
