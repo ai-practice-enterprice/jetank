@@ -139,7 +139,7 @@ class FSMNavigator(Node):
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
-        self.MAX_ERROR = 25
+        self.MAX_ERROR = 30
         # The maximum error value for which the robot is aligned when turning
         self.MAX_ALIGNMENT_ERROR = 50
 
@@ -156,7 +156,7 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 1.5 / 100 
+        self.KP = 2.5 / 100 
         # self.KI = 0.01 / 100 
         # self.KD = 0.2 / 100 
         # self.KS = 10
@@ -209,7 +209,7 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.6
             self.ANG_VEL = 3.5
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 0.8
+            self.DEAD_RECKONING_THRESHOLD = 0.85
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
@@ -437,7 +437,6 @@ class FSMNavigator(Node):
             proportion = 1
 
         self.current_lin_vel = proportion * self.LIN_VEL
-        # Use angle_error to adjust angular velocity
         self.current_ang_vel = self.KP * self.error
 
 
