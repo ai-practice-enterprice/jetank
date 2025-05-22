@@ -139,7 +139,7 @@ class FSMNavigator(Node):
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
-        self.MAX_ERROR = 30
+        self.MAX_ERROR = 25
         # The maximum error value for which the robot is aligned when turning
         self.MAX_ALIGNMENT_ERROR = 50
 
@@ -889,7 +889,7 @@ class FSMNavigator(Node):
         # "masks" which are copies of the cropped images but filtered based upon a predefined color range
         # and then converted to black white image
         roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        roi_hsv = self.adjust_gamma(roi_hsv, gamma=0.25)
+        # roi_hsv = self.adjust_gamma(roi_hsv, gamma=0.25)
         self.create_masks(roi_hsv)
         
 
