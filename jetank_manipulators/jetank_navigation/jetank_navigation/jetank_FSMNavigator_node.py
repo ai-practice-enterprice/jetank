@@ -139,7 +139,7 @@ class FSMNavigator(Node):
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
-        self.MAX_ERROR = 30
+        self.MAX_ERROR = 10
         # The maximum error value for which the robot is aligned when turning
         self.MAX_ALIGNMENT_ERROR = 50
 
@@ -155,9 +155,9 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 0.5 / 100 
-        self.KI = 0.1 / 100 
-        self.KD = 0.1 / 100 
+        self.KP = 0.3 / 100 
+        self.KI = 0.15 / 100 
+        self.KD = 0.15 / 100 
         self.integral = 0
         self.last_time = time.time()
 
@@ -441,27 +441,26 @@ class FSMNavigator(Node):
             # Consider a different scaling for linear velocity
             # For example: proportion_linvel = 1.0 - min(1.0, abs(self.error) / self.MAX_ERROR)
             proportion_linvel = self.MAX_ERROR / abs(self.error)
+            # depending on the error we need to scale the angular speed
+            # to steer the robot in the right direction
+            # the error is the distance from the center of the image
+            # so if the error is 0 we don't need to steer else we need to
+
+            self.integral +=  self.error * self.TIMER_PERIOD
+
+            self.current_lin_vel = self.LIN_VEL * proportion_linvel
+            self.current_ang_vel = (
+                self.KP * self.error +
+                self.KI * self.integral +
+                self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
+            )
         except ZeroDivisionError:
-            proportion_linvel = 1
+            self.current_lin_vel = self.LIN_VEL
+            self.current_ang_vel = 0
 
-        # depending on the error we need to scale the angular speed
-        # to steer the robot in the right direction
-        # the error is the distance from the center of the image
-        # so if the error is 0 we don't need to steer else we need to
-
-        self.integral +=  self.error * self.TIMER_PERIOD
-
-        self.current_lin_vel = self.LIN_VEL * proportion_linvel
-        self.current_ang_vel = (
-            self.KP * self.error +
-            self.KI * self.integral +
-            self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
-        )
-        
         self.get_logger().info(f"current error : {self.error}")
         self.get_logger().info(f"current lin vel : {self.current_lin_vel}")
         self.get_logger().info(f"current ang vel : {self.current_ang_vel}")
-
         self.prev_error = self.error
 
     def publish_cmd_vel(self):
