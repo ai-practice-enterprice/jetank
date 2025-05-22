@@ -889,8 +889,7 @@ class FSMNavigator(Node):
         # "masks" which are copies of the cropped images but filtered based upon a predefined color range
         # and then converted to black white image
         roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        roi_hsv = self.adjust_gamma(roi_hsv, gamma=1.5)
-        roi_hsv = cv2.GaussianBlur(roi_hsv, (5, 5), 0)
+        roi_hsv = self.adjust_gamma(roi_hsv, gamma=0.5)
         self.create_masks(roi_hsv)
         
 
