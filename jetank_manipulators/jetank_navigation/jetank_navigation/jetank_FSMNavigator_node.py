@@ -832,8 +832,6 @@ class FSMNavigator(Node):
             # direction logic
             image_center_x = width // 2
             self.error = 0
-            image_center_y = height // 2
-            self.error_y = 0
             
             # the smoothed_cx has to fall inside the interval : [image_center_x - self.MAX_ERROR ;image_center_x - self.MAX_ERROR]
             # if not we calculate the error margin from the center
@@ -864,13 +862,6 @@ class FSMNavigator(Node):
                 # Calculate error from desired angle (e.g., 90 degrees for vertical line)
                 desired_angle = 90  # adjust as needed for your setup
                 self.angle_error = desired_angle - abs(angle_deg)
-
-
-
-
-            for line in lines:
-                x1,y1,x2,y2 = line[0]
-                cv2.line(roi,(x1,y1),(x2,y2),(0,255,0),2)
             
 
             # annotations
