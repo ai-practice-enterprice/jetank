@@ -733,6 +733,18 @@ class FSMNavigator(Node):
             int(width/11):int(10*width/11)
         ]
         return roi
+    
+    def adjust_gamma(image, gamma=1.0):
+        # https://en.wikipedia.org/wiki/Gamma_correction
+        # https://pyimagesearch.com/2015/10/05/opencv-gamma-correction/
+        
+        # build a lookup table mapping the pixel values [0, 255] to
+        # their adjusted gamma values
+        invGamma = 1.0 / gamma
+        table = np.array([((i / 255.0) ** invGamma) * 255
+            for i in np.arange(0, 256)]).astype("uint8")
+        # apply gamma correction using the lookup table
+        return cv2.LUT(image, table)
 
     def morph_filter(self,mask):
         # https://cyrillugod.medium.com/filtering-and-morphological-operations-990662c5bd59
@@ -878,6 +890,8 @@ class FSMNavigator(Node):
         # "masks" which are copies of the cropped images but filtered based upon a predefined color range
         # and then converted to black white image
         roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        roi_hsv = self.adjust_gamma(roi_hsv, gamma=1.5)
+        roi_hsv = cv2.GaussianBlur(roi_hsv, (5, 5), 0)
         self.create_masks(roi_hsv)
         
 
