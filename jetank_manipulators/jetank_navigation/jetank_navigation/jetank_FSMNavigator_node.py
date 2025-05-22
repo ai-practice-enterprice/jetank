@@ -466,7 +466,7 @@ class FSMNavigator(Node):
     def publish_cmd_vel(self):
         msg = Twist()
         msg.linear.x = float(-1 * self.current_lin_vel)
-        msg.angular.z = float(-1 * self.current_ang_vel)
+        msg.angular.z = float(self.current_ang_vel)
         self.cmd_vel_publisher.publish(msg)
 
     # ---------------------- ------------- ----------------- #
