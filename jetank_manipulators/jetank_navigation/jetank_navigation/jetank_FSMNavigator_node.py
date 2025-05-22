@@ -843,6 +843,9 @@ class FSMNavigator(Node):
             # Convert the img to grayscale
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             # Calculate the angle of the detected line (if any)
+            # Apply edge detection method on the image
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
             angle_deg = None
             if lines is not None and len(lines) > 0:
                 # Take the longest line for better stability
@@ -862,9 +865,7 @@ class FSMNavigator(Node):
                 desired_angle = 90  # adjust as needed for your setup
                 self.angle_error = desired_angle - abs(angle_deg)
 
-            # Apply edge detection method on the image
-            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
-            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
+
 
 
             for line in lines:
