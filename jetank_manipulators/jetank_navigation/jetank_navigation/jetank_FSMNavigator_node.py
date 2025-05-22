@@ -419,7 +419,7 @@ class FSMNavigator(Node):
     
     def turn_on_spot(self,direction):
         self.current_lin_vel = 0
-        self.current_ang_vel = -1 * direction * self.ANG_VEL
+        self.current_ang_vel = direction * self.ANG_VEL
 
     def drive_straight(self):
         self.current_lin_vel = self.LIN_VEL
