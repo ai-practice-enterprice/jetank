@@ -144,7 +144,7 @@ class FSMNavigator(Node):
         self.MAX_ALIGNMENT_ERROR = 50
 
         self.error = 0
-        self.prev_error = None
+        self.prev_error = 0
         self.prev_cx = None
         self.prev_cy = None
         self.alpha_smoother = 0.3 
@@ -433,10 +433,8 @@ class FSMNavigator(Node):
     def drive_towards_center(self):
         try:
             proportion_linvel = self.MAX_ERROR / abs(self.error)
-            proportion_angvel = self.error / self.MAX_ERROR
         except ZeroDivisionError:
             proportion_linvel = 1
-            proportion_angvel = 0
 
         # depending on the error we need to scale the angular speed
         # to steer the robot in the right direction
@@ -444,8 +442,18 @@ class FSMNavigator(Node):
         # so if the error is 0 we don't need to steer else we need to
         # linear_vel == 1/angular_vel
 
+        self.integral += self.error * self.TIMER_PERIOD
+        self.prev_error = self.error
+        self.TIMER_PERIOD = time.time() - self.last_time
+
+
         self.current_lin_vel = self.LIN_VEL * proportion_linvel
-        self.current_ang_vel = self.KP * proportion_angvel
+        self.current_ang_vel = (
+            self.KP * self.error + 
+            self.KI * self.integral + 
+            self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
+        )
+        
 
     def publish_cmd_vel(self):
         msg = Twist()
