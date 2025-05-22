@@ -212,6 +212,7 @@ class FSMNavigator(Node):
             self.DRIVE_FORWARD_THRESHOLD = 30.0
             self.DEAD_RECKONING_THRESHOLD = 1.0
             self.MIN_AREA = 13000
+            self.MIN_AREA_LINE = 5000
             
             self.to_examine = [ 
                 DotType.RED,
@@ -849,7 +850,7 @@ class FSMNavigator(Node):
 
         if contours:
             cnt = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(cnt) > self.MIN_AREA:
+            if cv2.contourArea(cnt) > self.MIN_AREA_LINE:
                 M = cv2.moments(cnt)
                 height, width, _ = roi.shape
                 try:
