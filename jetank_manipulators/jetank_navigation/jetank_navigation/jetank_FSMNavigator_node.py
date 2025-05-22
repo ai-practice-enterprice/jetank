@@ -154,9 +154,10 @@ class FSMNavigator(Node):
         # https://support.haltech.com/portal/en/kb/articles/proportional-integral-and-derivative-gain
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
-        self.KP = 1.2/100 
-        self.KI = 1.1/100 
-        self.KD = 1.1/100 
+        # Reduced PID constants for smoother control
+        self.KP = 0.5 / 100 
+        self.KI = 0.05 / 100 
+        self.KD = 0.1 / 100 
         self.integral = 0
         self.last_time = time.time()
 
