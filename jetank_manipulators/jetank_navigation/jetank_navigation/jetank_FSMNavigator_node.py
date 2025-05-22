@@ -154,7 +154,7 @@ class FSMNavigator(Node):
         # https://support.haltech.com/portal/en/kb/articles/proportional-integral-and-derivative-gain
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
-        self.KP = 1.1/100 
+        self.KP = 1.2/100 
         self.KI = 1.1/100 
         self.KD = 1.1/100 
         self.integral = 0
@@ -432,12 +432,21 @@ class FSMNavigator(Node):
 
     def drive_towards_center(self):
         try:
-            proportion = (self.MAX_ERROR) / abs(self.error)
+            proportion_linvel = self.MAX_ERROR / abs(self.error)
+            proportion_angvel = self.error / self.MAX_ERROR
         except ZeroDivisionError:
-            proportion = 1
+            proportion_linvel = 1
+            proportion_angvel = 0
 
-        self.current_lin_vel = proportion * self.LIN_VEL
-        self.current_ang_vel = self.KP * self.error * (1 /proportion)
+        # depending on the error we need to scale the angular speed
+        # to steer the robot in the right direction
+        # the error is the distance from the center of the image
+        # so if the error is 0 we don't need to steer else we need to
+        # linear_vel == 1/angular_vel
+        #
+
+        self.current_lin_vel = self.LIN_VEL * proportion_linvel
+        self.current_ang_vel = self.ANG_VEL * proportion_angvel
 
     def publish_cmd_vel(self):
         msg = Twist()
