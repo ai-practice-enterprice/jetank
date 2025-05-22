@@ -10,7 +10,7 @@ import time
 import copy
 import json
 import typing
-
+import queue
 # from jetank_custom_msgs.msg import NotificationServer
 from std_msgs.msg import Int16 , Bool , Int16MultiArray , String
 from sensor_msgs.msg import Image, CompressedImage
@@ -155,9 +155,11 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 0.3 / 100 
-        self.KI = 0.15 / 100 
-        self.KD = 0.15 / 100 
+        self.KP = 0.25 / 100 
+        self.KI = 0.01 / 100 
+        self.KD = 0.2 / 100 
+        self.KS = 10
+        self.err_hist = queue.Queue(self.kS)
         self.integral = 0
         self.last_time = time.time()
 
@@ -432,10 +434,6 @@ class FSMNavigator(Node):
         self.current_ang_vel = 0
 
     def drive_towards_center(self):
-        current_time = time.time()
-        delta_time = current_time - self.last_time
-        self.last_time = current_time
-        self.TIMER_PERIOD = delta_time
 
         try:
             # Consider a different scaling for linear velocity
@@ -445,15 +443,24 @@ class FSMNavigator(Node):
             # to steer the robot in the right direction
             # the error is the distance from the center of the image
             # so if the error is 0 we don't need to steer else we need to
-
-            self.integral +=  self.error * self.TIMER_PERIOD
-
+            current_time = time.time()
+            delta_time = current_time - self.last_time
             self.current_lin_vel = self.LIN_VEL * proportion_linvel
-            self.current_ang_vel = -1 * (
-                self.KP * self.error +
-                self.KI * self.integral +
-                self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
-            )
+
+            if delta_time > 0:
+                self.err_hist.put(self.error) # Update error history
+                self.integral +=  self.error 
+
+                if self.err_hist.full(): # Jacketing logic to prevent integral windup
+                    self.integral -= self.err_hist.get() # Rolling FIFO buffer
+
+
+                self.current_ang_vel = (
+                    (self.KP * self.error) +
+                    (self.KI * self.integral * delta_time) +
+                    (self.KD * (self.error - self.prev_error) / delta_time)
+                )
+
         except ZeroDivisionError:
             self.current_lin_vel = self.LIN_VEL
             self.current_ang_vel = 0
@@ -461,7 +468,9 @@ class FSMNavigator(Node):
         self.get_logger().info(f"current error : {self.error}")
         self.get_logger().info(f"current lin vel : {self.current_lin_vel}")
         self.get_logger().info(f"current ang vel : {self.current_ang_vel}")
+        
         self.prev_error = self.error
+        self.last_time = current_time
 
     def publish_cmd_vel(self):
         msg = Twist()
