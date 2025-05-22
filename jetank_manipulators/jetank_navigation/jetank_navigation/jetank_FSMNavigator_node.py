@@ -432,7 +432,14 @@ class FSMNavigator(Node):
         self.current_ang_vel = 0
 
     def drive_towards_center(self):
+        current_time = time.time()
+        delta_time = current_time - self.last_time
+        self.last_time = current_time
+        self.TIMER_PERIOD = delta_time
+
         try:
+            # Consider a different scaling for linear velocity
+            # For example: proportion_linvel = 1.0 - min(1.0, abs(self.error) / self.MAX_ERROR)
             proportion_linvel = self.MAX_ERROR / abs(self.error)
         except ZeroDivisionError:
             proportion_linvel = 1
@@ -443,16 +450,14 @@ class FSMNavigator(Node):
         # so if the error is 0 we don't need to steer else we need to
 
         self.integral += self.error * self.TIMER_PERIOD
-        self.TIMER_PERIOD = time.time() - self.last_time
-
 
         self.current_lin_vel = self.LIN_VEL * proportion_linvel
         self.current_ang_vel = (
-            self.KP * self.error + 
-            self.KI * self.integral + 
+            self.KP * self.error +
+            self.KI * self.integral +
             self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
         )
-        
+
         self.prev_error = self.error
 
     def publish_cmd_vel(self):
