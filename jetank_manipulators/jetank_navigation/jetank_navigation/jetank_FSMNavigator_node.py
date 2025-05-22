@@ -139,7 +139,7 @@ class FSMNavigator(Node):
 
         # Send messages every X seconds
         # The maximum error value for which the robot is still in a straight line
-        self.MAX_ERROR = 10
+        self.MAX_ERROR = 30
         # The maximum error value for which the robot is aligned when turning
         self.MAX_ALIGNMENT_ERROR = 50
 
