@@ -738,7 +738,7 @@ class FSMNavigator(Node):
         # https://en.wikipedia.org/wiki/Gamma_correction
         # https://pyimagesearch.com/2015/10/05/opencv-gamma-correction/
         # https://docs.opencv.org/4.x/d3/dc1/tutorial_basic_linear_transform.html
-        
+
         # build a lookup table mapping the pixel values [0, 255] to
         # their adjusted gamma values
         table = np.array([((i / 255.0) ** gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
@@ -889,7 +889,7 @@ class FSMNavigator(Node):
         # "masks" which are copies of the cropped images but filtered based upon a predefined color range
         # and then converted to black white image
         roi_hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        roi_hsv = self.adjust_gamma(roi_hsv, gamma=0.5)
+        roi_hsv = self.adjust_gamma(roi_hsv, gamma=0.25)
         self.create_masks(roi_hsv)
         
 
