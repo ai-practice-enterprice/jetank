@@ -806,7 +806,6 @@ class FSMNavigator(Node):
                 contour_clr = (0,255,255)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
-                edges = cv2.Canny(self.green_mask, 50, 150, apertureSize=3)
                 contour_clr = (255,255,255)
             else:
                 return False
@@ -840,10 +839,15 @@ class FSMNavigator(Node):
             if smoothed_cx < image_center_x - self.MAX_ERROR or image_center_x + self.MAX_ERROR < smoothed_cx:
                 self.error = image_center_x - smoothed_cx
 
-            # Calculate the angle of the detected line (if any)
             # Apply edge detection method on the image
+            if self.jetank_state == JetankState.DOT_DETECTED:
+                edges = cv2.Canny(self.red_mask, 50, 150, apertureSize=3)
+            elif self.jetank_state == JetankState.FOLLOW_LINE or self.jetank_state == JetankState.IDLE:
+                edges = cv2.Canny(self.green_mask, 50, 150, apertureSize=3)
+
             lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
             angle_deg = None
+            # Calculate the angle of the detected line (if any)
             if lines is not None and len(lines) > 0:
                 # Take the longest line for better stability
                 longest_line = max(lines, key=lambda l: np.linalg.norm([l[0][2] - l[0][0], l[0][3] - l[0][1]]))
