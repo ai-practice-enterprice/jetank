@@ -156,7 +156,7 @@ class FSMNavigator(Node):
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
         self.KP = 0.5 / 100 
-        self.KI = 0.05 / 100 
+        self.KI = 0.01 / 100 
         self.KD = 0.1 / 100 
         self.integral = 0
         self.last_time = time.time()
@@ -441,10 +441,8 @@ class FSMNavigator(Node):
         # to steer the robot in the right direction
         # the error is the distance from the center of the image
         # so if the error is 0 we don't need to steer else we need to
-        # linear_vel == 1/angular_vel
 
         self.integral += self.error * self.TIMER_PERIOD
-        self.prev_error = self.error
         self.TIMER_PERIOD = time.time() - self.last_time
 
 
@@ -455,6 +453,7 @@ class FSMNavigator(Node):
             self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
         )
         
+        self.prev_error = self.error
 
     def publish_cmd_vel(self):
         msg = Twist()
