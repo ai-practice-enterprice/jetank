@@ -210,8 +210,8 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.5
             self.ANG_VEL = 3.0
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 0.80
-            self.MIN_AREA = 6000
+            self.DEAD_RECKONING_THRESHOLD = 0.85
+            self.MIN_AREA = 6500
             
             self.to_examine = [ 
                 DotType.RED,
@@ -728,7 +728,7 @@ class FSMNavigator(Node):
         height , width , channels = self.cv_image.shape
         roi = self.cv_image[
             int(height/2 + 100):int(height),
-            int(0):int(width)
+            int(width/10):int(9*width/10)
         ]
         return roi
     
