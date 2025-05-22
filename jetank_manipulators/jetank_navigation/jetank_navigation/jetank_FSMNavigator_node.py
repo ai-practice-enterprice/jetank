@@ -449,13 +449,13 @@ class FSMNavigator(Node):
         # the error is the distance from the center of the image
         # so if the error is 0 we don't need to steer else we need to
 
-        self.integral += self.error * self.TIMER_PERIOD
+        self.integral +=  (-1 *  self.error) * self.TIMER_PERIOD
 
         self.current_lin_vel = self.LIN_VEL * proportion_linvel
         self.current_ang_vel = (
-            self.KP * self.error +
+            self.KP * -1 *  self.error +
             self.KI * self.integral +
-            self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
+            self.KD * (-1 *  self.error - -1 * self.prev_error) / self.TIMER_PERIOD
         )
 
         self.prev_error = self.error
@@ -463,7 +463,7 @@ class FSMNavigator(Node):
     def publish_cmd_vel(self):
         msg = Twist()
         msg.linear.x = float(-1 * self.current_lin_vel)
-        msg.angular.z = float(self.current_ang_vel)
+        msg.angular.z = float(-1 * self.current_ang_vel)
         self.cmd_vel_publisher.publish(msg)
 
     # ---------------------- ------------- ----------------- #
