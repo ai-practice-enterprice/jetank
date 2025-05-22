@@ -270,11 +270,6 @@ class FSMNavigator(Node):
             topic="/to_server",
             qos_profile=10,
         )
-        self.to_server_confirm_received_pub = self.create_publisher(
-            msg_type=String,
-            topic='/to_server_confirm_robot_received',
-            qos_profile=10
-        )
         # subscribers for the different robot params
         # e.g.: ros2 topic pub /jetank_1/goal_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
         if self.SIMULATION:
@@ -1015,17 +1010,6 @@ class FSMNavigator(Node):
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
                 self.package_id = int(msg_data_from_server["package_id"])
                 self.goal_storage_position = (int(msg_data_from_server["final_x"]),int(msg_data_from_server["final_y"]))
-
-                self.to_server_confirm_received_pub.publish(
-                    String(data=json.dumps({
-                        "robot_namespace" : self.get_namespace(),
-                        "robot_message" : self.get_namespace() + " " + "goal position received",
-                        "message_type" : "Info".upper(),
-                        "package_id": self.package_id,
-                        "robot_id": msg_data_from_server["robot_id"],
-                        "status" : False,            
-                    }))
-                )
 
                 self.jetank_state = JetankState.INITIALIZE
 
