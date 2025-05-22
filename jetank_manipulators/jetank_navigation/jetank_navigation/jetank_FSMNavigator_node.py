@@ -802,9 +802,11 @@ class FSMNavigator(Node):
         if self.jetank_state == JetankState.DOT_DETECTED:
             if self.dot_color_detected == DotType.RED:
                 contours, _ = cv2.findContours(self.red_mask,cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+                edges = cv2.Canny(self.red_mask, 50, 150, apertureSize=3)
                 contour_clr = (0,255,255)
             elif self.dot_color_detected == DotType.BLUE:
                 contours, _ = cv2.findContours(self.blue_mask,cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
+                edges = cv2.Canny(self.green_mask, 50, 150, apertureSize=3)
                 contour_clr = (255,255,255)
             else:
                 return False
@@ -838,11 +840,8 @@ class FSMNavigator(Node):
             if smoothed_cx < image_center_x - self.MAX_ERROR or image_center_x + self.MAX_ERROR < smoothed_cx:
                 self.error = image_center_x - smoothed_cx
 
-            # Convert the img to grayscale
-            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             # Calculate the angle of the detected line (if any)
             # Apply edge detection method on the image
-            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
             lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
             angle_deg = None
             if lines is not None and len(lines) > 0:
