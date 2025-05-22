@@ -125,6 +125,7 @@ class FSMNavigator(Node):
         self.prev_jetank_state = JetankState.IDLE
         self.is_arm_published = False
         self.recalculating_route = False
+        self.busy_at_the_moment = False
         
         ## user-defined parameters:
         self.dot_detected = False
@@ -1008,12 +1009,11 @@ class FSMNavigator(Node):
             msg_data_from_server = json.loads(msg.data)
             self.get_logger().info(f"FROM SERVER: {msg_data_from_server}")
 
-            if self.get_namespace() == msg_data_from_server["robot_namespace"]:
+            if self.get_namespace() == msg_data_from_server["robot_namespace"] and self.busy_at_the_moment == False:
                 self.get_logger().info(f"{self.get_namespace()} : THIS MESSAGE IS FOR ME")
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
                 self.package_id = int(msg_data_from_server["package_id"])
                 self.goal_storage_position = (int(msg_data_from_server["final_x"]),int(msg_data_from_server["final_y"]))
-
                 self.jetank_state = JetankState.INITIALIZE
 
             else:
@@ -1162,6 +1162,7 @@ class FSMNavigator(Node):
         # ----------- state condition and logic ----------- #
         # ================================================= #
         if self.jetank_state == JetankState.INITIALIZE:
+            self.busy_at_the_moment = True
             if not self.a_star(recalculating=self.recalculating_route):
                 self.get_logger().error(f'NO available path')
                 self.jetank_state = JetankState.IDLE
@@ -1211,6 +1212,7 @@ class FSMNavigator(Node):
 
         # ================================================= #
         elif self.jetank_state == JetankState.IDLE:
+            self.busy_at_the_moment = False
             self.publish_arm_ik(points="rest_pos")
 
             if time.perf_counter() - self.available_status_last_broadcast >= self.timer_between_broadcast_available_status:
