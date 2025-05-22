@@ -737,11 +737,11 @@ class FSMNavigator(Node):
     def adjust_gamma(self,image, gamma=1.0):
         # https://en.wikipedia.org/wiki/Gamma_correction
         # https://pyimagesearch.com/2015/10/05/opencv-gamma-correction/
+        # https://docs.opencv.org/4.x/d3/dc1/tutorial_basic_linear_transform.html
         
         # build a lookup table mapping the pixel values [0, 255] to
         # their adjusted gamma values
-        invGamma = 1.0 / gamma
-        table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+        table = np.array([((i / 255.0) ** gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
         # apply gamma correction using the lookup table
         return cv2.LUT(image, table)
 
