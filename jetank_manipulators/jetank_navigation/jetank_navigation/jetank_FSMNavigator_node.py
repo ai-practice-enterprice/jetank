@@ -144,6 +144,7 @@ class FSMNavigator(Node):
         self.MAX_ALIGNMENT_ERROR = 50
 
         self.error = 0
+        self.error_y = 0
         self.prev_error = 0
         self.prev_cx = None
         self.prev_cy = None
@@ -156,12 +157,12 @@ class FSMNavigator(Node):
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
         self.KP = 1.2 / 100 
-        self.KI = 0.01 / 100 
-        self.KD = 0.2 / 100 
-        self.KS = 10
-        self.err_hist = queue.Queue(maxsize=self.KS)
-        self.integral = 0
-        self.last_time = time.time()
+        # self.KI = 0.01 / 100 
+        # self.KD = 0.2 / 100 
+        # self.KS = 10
+        # self.err_hist = queue.Queue(maxsize=self.KS)
+        # self.integral = 0
+        # self.last_time = time.time()
 
         self.current_lin_vel = 0
         self.prev_lin_vel = 0
@@ -431,11 +432,13 @@ class FSMNavigator(Node):
     def drive_towards_center(self):
         try:
             proportion = (self.MAX_ERROR) / abs(self.error)
+            
         except ZeroDivisionError:
             proportion = 1
 
         self.current_lin_vel = proportion * self.LIN_VEL
-        self.current_ang_vel = self.KP * self.error
+        # Use angle_error to adjust angular velocity
+        self.current_ang_vel = self.KP * self.angle_error
 
 
     def publish_cmd_vel(self):
@@ -725,7 +728,7 @@ class FSMNavigator(Node):
         height , width , channels = self.cv_image.shape
         roi = self.cv_image[
             int(height/2 + 100):int(height),
-            int(width/11):int(10*width/11)
+            int(0):int(width)
         ]
         return roi
     
@@ -829,11 +832,45 @@ class FSMNavigator(Node):
             # direction logic
             image_center_x = width // 2
             self.error = 0
+            image_center_y = height // 2
+            self.error_y = 0
             
             # the smoothed_cx has to fall inside the interval : [image_center_x - self.MAX_ERROR ;image_center_x - self.MAX_ERROR]
             # if not we calculate the error margin from the center
             if smoothed_cx < image_center_x - self.MAX_ERROR or image_center_x + self.MAX_ERROR < smoothed_cx:
                 self.error = image_center_x - smoothed_cx
+
+            # Convert the img to grayscale
+            gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+            # Calculate the angle of the detected line (if any)
+            angle_deg = None
+            if lines is not None and len(lines) > 0:
+                # Take the longest line for better stability
+                longest_line = max(lines, key=lambda l: np.linalg.norm([l[0][2] - l[0][0], l[0][3] - l[0][1]]))
+                x1, y1, x2, y2 = longest_line[0]
+                dx = x2 - x1
+                dy = y2 - y1
+                angle_rad = np.arctan2(dy, dx)
+                angle_deg = np.degrees(angle_rad)
+                # Draw the selected line in a different color for visualization
+                cv2.line(roi, (x1, y1), (x2, y2), (255, 0, 0), 3)
+
+                # Use the angle to adjust robot steering
+                # 0 degrees = horizontal, 90/-90 = vertical
+                # For line following, you may want to keep the robot perpendicular to the line
+                # Calculate error from desired angle (e.g., 90 degrees for vertical line)
+                desired_angle = 90  # adjust as needed for your setup
+                self.angle_error = desired_angle - abs(angle_deg)
+
+            # Apply edge detection method on the image
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            lines = cv2.HoughLinesP(edges, 1, np.pi / 180, 100, minLineLength=100, maxLineGap=10)
+
+
+            for line in lines:
+                x1,y1,x2,y2 = line[0]
+                cv2.line(roi,(x1,y1),(x2,y2),(0,255,0),2)
+            
 
             # annotations
             cv2.circle(roi,(smoothed_cx,smoothed_cy),5,contour_clr,2)
