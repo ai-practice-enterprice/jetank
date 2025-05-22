@@ -632,7 +632,7 @@ class FSMNavigator(Node):
         for dx, dy in moves:
             nx, ny = x + dx, y + dy
             if 0 <= nx < len(self.map[0]) and 0 <= ny < len(self.map):
-                if self.map[ny][nx] != ZoneTypes.VOID and self.map[ny][nx] != ZoneTypes.BLOCKED:
+                if self.map[ny][nx] != ZoneTypes.VOID.value and self.map[ny][nx] != ZoneTypes.BLOCKED.value:
                     results.append((nx, ny))
         return results
     
