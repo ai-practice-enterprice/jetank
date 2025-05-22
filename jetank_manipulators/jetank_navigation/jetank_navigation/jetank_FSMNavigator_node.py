@@ -157,7 +157,7 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 2.5 / 100 
+        self.KP = 3.0 / 100 
         # self.KI = 0.01 / 100 
         # self.KD = 0.2 / 100 
         # self.KS = 10
@@ -207,8 +207,8 @@ class FSMNavigator(Node):
             self.lower_red2 = np.array([170, 120, 120])
             self.upper_red2 = np.array([179, 255, 255])
         else:
-            self.LIN_VEL = 0.55
-            self.ANG_VEL = 3.5
+            self.LIN_VEL = 0.45
+            self.ANG_VEL = 4.0
             self.DRIVE_FORWARD_THRESHOLD = 30.0
             self.DEAD_RECKONING_THRESHOLD = 0.80
             self.MIN_AREA = 6000
