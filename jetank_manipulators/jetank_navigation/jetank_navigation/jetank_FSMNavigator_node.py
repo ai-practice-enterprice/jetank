@@ -156,7 +156,7 @@ class FSMNavigator(Node):
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
         self.KP = 0.5 / 100 
-        self.KI = 0.5 / 100 
+        self.KI = 0.1 / 100 
         self.KD = 0.1 / 100 
         self.integral = 0
         self.last_time = time.time()
