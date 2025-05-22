@@ -781,8 +781,7 @@ class FSMNavigator(Node):
             for c in contours:
                 area_detected = cv2.contourArea(c)
                 if area_detected > self.MIN_AREA:
-                    if self.DEBUG:
-                        self.get_logger().info(f"Area : {area_detected}")
+                    self.get_logger().info(f"Dot Area : {area_detected}")
                     # if a dot is detected we keep track what dot color it 
                     # was and switch to a dot detected state as following a line
                     # is not our priority anymore 
