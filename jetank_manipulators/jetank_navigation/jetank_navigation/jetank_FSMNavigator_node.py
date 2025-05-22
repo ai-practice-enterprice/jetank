@@ -208,7 +208,7 @@ class FSMNavigator(Node):
             self.LIN_VEL = 0.6
             self.ANG_VEL = 3.5
             self.DRIVE_FORWARD_THRESHOLD = 30.0
-            self.DEAD_RECKONING_THRESHOLD = 1.0
+            self.DEAD_RECKONING_THRESHOLD = 0.8
             self.MIN_AREA = 6000
             
             self.to_examine = [ 
@@ -1254,9 +1254,11 @@ def main(args=None):
         rclpy.spin(navigator_node)
     except KeyboardInterrupt:
         navigator_node.stop_moving()
-
+    
     navigator_node.send_before_dead()
     navigator_node.stop_moving()
+    time.sleep(2)    
+    
     navigator_node.destroy_node()
     rclpy.shutdown()
 
