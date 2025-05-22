@@ -159,7 +159,7 @@ class FSMNavigator(Node):
         self.KI = 0.01 / 100 
         self.KD = 0.2 / 100 
         self.KS = 10
-        self.err_hist = queue.Queue(self.kS)
+        self.err_hist = queue.Queue(maxsize=self.KS)
         self.integral = 0
         self.last_time = time.time()
 
