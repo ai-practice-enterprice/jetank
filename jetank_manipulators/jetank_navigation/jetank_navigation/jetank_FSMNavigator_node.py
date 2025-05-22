@@ -157,7 +157,7 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 2.0 / 100 
+        self.KP = 1.1 / 100 
         # self.KI = 0.01 / 100 
         # self.KD = 0.2 / 100 
         # self.KS = 10
