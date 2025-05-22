@@ -449,7 +449,7 @@ class FSMNavigator(Node):
             self.integral +=  self.error * self.TIMER_PERIOD
 
             self.current_lin_vel = self.LIN_VEL * proportion_linvel
-            self.current_ang_vel = (
+            self.current_ang_vel = -1 * (
                 self.KP * self.error +
                 self.KI * self.integral +
                 self.KD * (self.error - self.prev_error) / self.TIMER_PERIOD
