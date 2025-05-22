@@ -155,7 +155,7 @@ class FSMNavigator(Node):
         # https://softinery.com/blog/implementation-of-pid-controller-in-python/
         # (Multiplied by the error value)
         # Reduced PID constants for smoother control
-        self.KP = 0.25 / 100 
+        self.KP = 1.2 / 100 
         self.KI = 0.01 / 100 
         self.KD = 0.2 / 100 
         self.KS = 10
@@ -434,44 +434,14 @@ class FSMNavigator(Node):
         self.current_ang_vel = 0
 
     def drive_towards_center(self):
-
         try:
-            # Consider a different scaling for linear velocity
-            # For example: proportion_linvel = 1.0 - min(1.0, abs(self.error) / self.MAX_ERROR)
-            proportion_linvel = self.MAX_ERROR / abs(self.error)
-            # depending on the error we need to scale the angular speed
-            # to steer the robot in the right direction
-            # the error is the distance from the center of the image
-            # so if the error is 0 we don't need to steer else we need to
-            current_time = time.time()
-            self.last_time = current_time
-            delta_time = current_time - self.last_time
-
-            self.current_lin_vel = self.LIN_VEL * proportion_linvel
-
-            if delta_time > 0:
-                self.err_hist.put(self.error) # Update error history
-                self.integral +=  self.error 
-
-                if self.err_hist.full(): # Jacketing logic to prevent integral windup
-                    self.integral -= self.err_hist.get() # Rolling FIFO buffer
-
-
-                self.current_ang_vel = (
-                    (self.KP * self.error) +
-                    (self.KI * self.integral * delta_time) +
-                    (self.KD * (self.error - self.prev_error) / delta_time)
-                )
-
+            proportion = (self.MAX_ERROR) / abs(self.error)
         except ZeroDivisionError:
-            self.current_lin_vel = self.LIN_VEL
-            self.current_ang_vel = 0
+            proportion = 1
 
-        self.get_logger().info(f"current error : {self.error}")
-        self.get_logger().info(f"current lin vel : {self.current_lin_vel}")
-        self.get_logger().info(f"current ang vel : {self.current_ang_vel}")
-        
-        self.prev_error = self.error
+        self.current_lin_vel = proportion * self.LIN_VEL
+        self.current_ang_vel = self.KP * self.error
+
 
     def publish_cmd_vel(self):
         msg = Twist()
