@@ -133,7 +133,7 @@ class FSMNavigator(Node):
         self.dot_disseappered_at_time = 0.0
         self.last_dot_time_since_FOLLOW_LINE_state = 0.0
 
-        self.timer_between_arm_mov = 3
+        self.timer_between_arm_mov = 4
         self.timer_between_broadcast_available_status = 20
         self.available_status_last_broadcast = time.perf_counter()
 
@@ -202,7 +202,7 @@ class FSMNavigator(Node):
             self.lower_red2 = np.array([170, 125, 125])
             self.upper_red2 = np.array([179, 255, 255])
         else:
-            self.LIN_VEL = 0.5
+            self.LIN_VEL = 0.6
             self.ANG_VEL = 3.5
             self.DRIVE_FORWARD_THRESHOLD = 30.0
             self.DEAD_RECKONING_THRESHOLD = 1.0
@@ -212,15 +212,15 @@ class FSMNavigator(Node):
                 DotType.RED,
             ]
 
-            self.lower_green = np.array([60, 50, 130])
+            self.lower_green = np.array([60, 50, 120])
             self.upper_green = np.array([100, 255, 255])
 
-            self.lower_blue = np.array([110, 50, 130])
+            self.lower_blue = np.array([110, 50, 120])
             self.upper_blue = np.array([130, 255, 255])
 
-            self.lower_red1 = np.array([0, 50, 130])
+            self.lower_red1 = np.array([0, 50, 120])
             self.upper_red1 = np.array([20, 255, 255])
-            self.lower_red2 = np.array([175, 50, 130])
+            self.lower_red2 = np.array([175, 50, 120])
             self.upper_red2 = np.array([179, 255, 255])
  
         # --------------------------- ------------------------------------- --------------------------- #
@@ -266,6 +266,11 @@ class FSMNavigator(Node):
             msg_type=String,
             topic="/to_server",
             qos_profile=10,
+        )
+        self.to_server_confirm_received_pub = self.create_publisher(
+            msg_type=String,
+            topic='/to_server_confirm_robot_received',
+            qos_profile=10
         )
         # subscribers for the different robot params
         # e.g.: ros2 topic pub /jetank_1/goal_position --once geometry_msgs/msg/Point "{x: 1.0,y: 1.0,z: 1.0}"
@@ -432,7 +437,7 @@ class FSMNavigator(Node):
             proportion = 1
 
         self.current_lin_vel = proportion * self.LIN_VEL
-        self.current_ang_vel = self.KP * self.error * proportion
+        self.current_ang_vel = self.KP * self.error * (1 /proportion)
 
     def publish_cmd_vel(self):
         msg = Twist()
@@ -721,7 +726,7 @@ class FSMNavigator(Node):
         height , width , channels = self.cv_image.shape
         roi = self.cv_image[
             int(height/2 + 100):int(height),
-            int(width/10):int(9*width/10)
+            int(width/11):int(10*width/11)
         ]
         return roi
 
@@ -994,6 +999,17 @@ class FSMNavigator(Node):
                 self.goal_position = (int(msg_data_from_server["x"]),int(msg_data_from_server["y"]))
                 self.package_id = int(msg_data_from_server["package_id"])
                 self.goal_storage_position = (int(msg_data_from_server["final_x"]),int(msg_data_from_server["final_y"]))
+
+                self.to_server_confirm_received_pub.publish(
+                    String(data=json.dumps({
+                        "robot_namespace" : self.get_namespace(),
+                        "robot_message" : self.get_namespace() + " " + "goal position received",
+                        "message_type" : "Info".upper(),
+                        "package_id": self.package_id,
+                        "robot_id": msg_data_from_server["robot_id"],
+                        "status" : False,            
+                    }))
+                )
 
                 self.jetank_state = JetankState.INITIALIZE
 
