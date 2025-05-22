@@ -217,15 +217,15 @@ class FSMNavigator(Node):
                 DotType.RED,
             ]
 
-            self.lower_green = np.array([60, 50, 120])
+            self.lower_green = np.array([60, 50, 130])
             self.upper_green = np.array([100, 255, 255])
 
-            self.lower_blue = np.array([110, 50, 120])
+            self.lower_blue = np.array([110, 50, 130])
             self.upper_blue = np.array([130, 255, 255])
 
-            self.lower_red1 = np.array([0, 50, 120])
+            self.lower_red1 = np.array([0, 50, 130])
             self.upper_red1 = np.array([20, 255, 255])
-            self.lower_red2 = np.array([175, 50, 120])
+            self.lower_red2 = np.array([175, 50, 130])
             self.upper_red2 = np.array([179, 255, 255])
  
         # --------------------------- ------------------------------------- --------------------------- #
